@@ -57,6 +57,11 @@ totvs-protheus-modern-devops/
 │       ├── Dockerfile
 │       └── init-protheus.sql
 │
+├── dbaccess/               # <<--- Nova Camada
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   └── dbaccess.ini.tmpl   # Template de configuração
+│
 ├── .env.example            # Variáveis de ambiente globais
 ├── docker-compose.yml      # Orquestrador local
 ├── README.md               # Documentação técnica viva
@@ -67,30 +72,25 @@ totvs-protheus-modern-devops/
 
 ## ⚡ Status Atual do Projeto e Roadmap
 
-* [x] Fase 1: Camada de Dados Otimizada
+* [x] **Fase 1: Camada de Dados Otimizada**
 
   * [x] Containerização do PostgreSQL 16+ parametrizado com as LC_tags oficiais da TOTVS (WIN1252, LC_COLLATE=C).
-
   * [x] Containerização do MS SQL Server 2022 Developer com Collation Binária (Latin1_General_BIN).
-
   * [x] Inicialização dinâmica de bancos de dados, usuários e permissões via variáveis de ambiente.
-
   * [x] Tuning inicial de performance de disco e memória para ambientes de desenvolvimento/homologação.
 
-* [ ] Fase 2: Camada de Conectividade (DbAccess)
+* [x] **Fase 2: Camada de Conectividade (dbAccess)**
 
-  * [ ] Dockerfile inteligente e enxuto para o DbAccess.
-
-  * [ ] Parametrização dinâmica do dbaccess.ini via variáveis de ambiente.
+  * [x] Dockerfile inteligente preparado para multi-drivers (Postgres/SQL Server).
+  * [x] Resiliência de inicialização via script que aguarda a porta do banco abrir.
+  * [x] Parametrização dinâmica do `dbaccess.ini` via template e `envsubst`.
 
 * [ ] Fase 3: Camada de Aplicação Modular (AppServer)
 
   * [ ] Criação de imagens base via Multi-Stage build (redução drástica de tamanho).
-
   * [ ] Divisão de perfis de execução (Core, Rest, WebAgent).
 
 * [ ] Fase 4: Orquestração e CI/CD
-
   * [ ] Automação de builds via GitHub Actions.
 
 ---

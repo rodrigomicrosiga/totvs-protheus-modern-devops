@@ -43,7 +43,29 @@ services:
     volumes:
       - sql_data:/var/opt/mssql
     restart: always
-
+  # ----------------------------------------------------------------------------
+  # CONECTIVIDADE: TOTVS DBACCESS
+  # Execução: docker compose --profile postgres up -d ou --profile sqlserver up -d
+  # ----------------------------------------------------------------------------
+  dbaccess:
+    build: ./dbaccess
+    container_name: protheus_dbaccess
+    profiles:
+      - postgres
+      - sqlserver
+    environment:
+      - DB_TYPE=${DB_TYPE}         # POSTGRESQL ou MSSQL
+      - DB_SERVER=${DB_SERVER}     # Nome do container do banco escolhido
+      - DB_PORT=${DB_PORT}         # 5432 ou 1433
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+    ports:
+      - "7890:7890"
+    depends_on:
+      - postgres_db
+      - sqlserver_db
+    restart: always
 volumes:
   pg_data:
   sql_data:
