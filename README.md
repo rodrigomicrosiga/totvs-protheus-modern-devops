@@ -123,13 +123,13 @@ Copie o arquivo `.env.example` para `.env` e configure o nome do banco, usuário
 Para subir o ecossistema utilizando `PostgreSQL`:
 
 ```bash
-docker compose up postgres_db -d
+docker compose --profile postgres up -d
 ```
 
 Para subir utilizando `MS SQL Server`:
 
 ```bash
-docker compose up sqlserver_db -d
+docker compose --profile sqlserver up -d
 ```
 
 ## 💎 Diferenciais de Engenharia & Performance (O "Pulo do Gato")
