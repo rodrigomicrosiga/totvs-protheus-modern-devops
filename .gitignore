@@ -24,9 +24,18 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
-.env
-
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# --- TOTVS Artifacts & Binaries ---
+*.tar.gz
+*.zip
+*.tgz
+dbaccess/dbaccess_linux_x64.tar.gz
+
+# --- Environment & Secrets ---
+.env
+
+# --- Docker Persistent Data ---
+.docker/

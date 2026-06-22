@@ -118,7 +118,11 @@ cd totvs-protheus-modern-devops
 
 Copie o arquivo `.env.example` para `.env` e configure o nome do banco, usuário e senha de sua preferência.
 
-3. Iniciar o Banco de Dados Desejado
+3. dbAccess
+
+Coloque o artefato `dbaccess_linux_x64.tar.gz` (artefato atualizado do portal e renomeado) dentro da pasta `./dbaccess/`.
+
+4. Iniciar o Banco de Dados Desejado
 
 Para subir o ecossistema utilizando `PostgreSQL`:
 

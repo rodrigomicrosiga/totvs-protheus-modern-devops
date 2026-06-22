@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   # ----------------------------------------------------------------------------
-  # BANCO DE DADOS: POSTGRESQL 16+
-  # Execução: docker compose --profile postgres up -d
+  # DATA TIER: POSTGRESQL 16+
   # ----------------------------------------------------------------------------
   postgres_db:
     build: ./databases/postgres
@@ -11,12 +8,15 @@ services:
     profiles:
       - postgres
     environment:
-      - POSTGRES_USER=${POSTGRES_ROOT_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD:-postgres_dev_pwd}
-      - POSTGRES_DB=${POSTGRES_ROOT_USER:-postgres}
-      - DB_PROTHEUS_NAME=${DB_NAME}
-      - DB_PROTHEUS_USER=${DB_USER}
-      - DB_PROTHEUS_PASSWORD=${DB_PASS}
+      - POSTGRES_USER=${POSTGRES_ROOT_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_ROOT_USER}
+      # Injeção direta e limpa para o escopo do container:
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      # TUNING SEM QUEBRAR O SCRIPTD_INIT:
+      - POSTGRES_INITDB_ARGS=--data-checksums -c shared_buffers=512MB -c synchronous_commit=off
     ports:
       - "5432:5432"
     volumes:
@@ -24,8 +24,7 @@ services:
     restart: always
 
   # ----------------------------------------------------------------------------
-  # BANCO DE DADOS: MS SQL SERVER 2022
-  # Execução: docker compose --profile sqlserver up -d
+  # DATA TIER: MS SQL SERVER 2022
   # ----------------------------------------------------------------------------
   sqlserver_db:
     build: ./databases/sqlserver
@@ -35,17 +34,17 @@ services:
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
-      - DB_PROTHEUS_NAME=${DB_NAME}
-      - DB_PROTHEUS_USER=${DB_USER}
-      - DB_PROTHEUS_PASSWORD=${DB_PASS}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
     ports:
       - "1433:1433"
     volumes:
       - sql_data:/var/opt/mssql
     restart: always
+
   # ----------------------------------------------------------------------------
-  # CONECTIVIDADE: TOTVS DBACCESS
-  # Execução: docker compose --profile postgres up -d ou --profile sqlserver up -d
+  # CONNECTIVITY TIER: TOTVS DBACCESS
   # ----------------------------------------------------------------------------
   dbaccess:
     build: ./dbaccess
@@ -54,18 +53,25 @@ services:
       - postgres
       - sqlserver
     environment:
-      - DB_TYPE=${DB_TYPE}         # POSTGRESQL ou MSSQL
-      - DB_SERVER=${DB_SERVER}     # Nome do container do banco escolhido
-      - DB_PORT=${DB_PORT}         # 5432 ou 1433
+      - DB_TYPE=${DB_TYPE}
+      - DB_SERVER=${DB_SERVER}
+      - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
+      - LICENSE_SERVER_HOST=${LICENSE_SERVER_HOST}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
     ports:
       - "7890:7890"
     depends_on:
-      - postgres_db
-      - sqlserver_db
+      postgres_db:
+        condition: service_started
+        required: false
+      sqlserver_db:
+        condition: service_started
+        required: false
     restart: always
+
 volumes:
   pg_data:
   sql_data:
