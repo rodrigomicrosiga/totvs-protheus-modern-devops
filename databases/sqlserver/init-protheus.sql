@@ -1,0 +1,17 @@
+-- Cria o banco de dados utilizando a collation estrita Latin1_General_BIN
+CREATE DATABASE [$(DB_PROTHEUS_NAME)] 
+COLLATE Latin1_General_BIN;
+GO
+
+-- Habilita o isolamento de snapshot para evitar Deadlocks no ERP
+ALTER DATABASE [$(DB_PROTHEUS_NAME)] SET ALLOW_SNAPSHOT_ISOLATION ON;
+ALTER DATABASE [$(DB_PROTHEUS_NAME)] SET READ_COMMITTED_SNAPSHOT ON;
+GO
+
+-- Garante as permissões de leitura/escrita e propriedade do Schema
+CREATE LOGIN [$(DB_PROTHEUS_USER)] WITH PASSWORD = '$(DB_PROTHEUS_PASSWORD)', DEFAULT_DATABASE = [$(DB_PROTHEUS_NAME)];
+GO
+USE [$(DB_PROTHEUS_NAME)];
+CREATE USER [$(DB_PROTHEUS_USER)] FOR LOGIN [$(DB_PROTHEUS_USER)];
+ALTER ROLE db_owner ADD MEMBER [$(DB_PROTHEUS_USER)];
+GO

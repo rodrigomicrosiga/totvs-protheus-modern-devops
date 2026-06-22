@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+# Criando o banco com as diretrizes EXATAS exigidas pela TOTVS para o PostgreSQL
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE USER ${DB_PROTHEUS_USER} WITH PASSWORD '${DB_PROTHEUS_PASSWORD}';
+    CREATE DATABASE ${DB_PROTHEUS_NAME} 
+        WITH OWNER ${DB_PROTHEUS_USER} 
+        ENCODING 'WIN1252' 
+        LC_COLLATE 'C' 
+        LC_CTYPE 'pt_BR.CP1252';
+    GRANT ALL PRIVILEGES ON DATABASE ${DB_PROTHEUS_NAME} TO ${DB_PROTHEUS_USER};
+EOSQL
