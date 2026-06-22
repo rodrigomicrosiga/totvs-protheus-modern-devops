@@ -136,6 +136,22 @@ Para subir utilizando `MS SQL Server`:
 docker compose --profile sqlserver up -d
 ```
 
+5. Destruição Segura e Limpeza de Cache
+```bash
+docker compose --profile <postgres|sqlserver> down -v
+```
+
+6. Visualização de logs
+```bash
+docker logs <server_name> -f
+```
+
+Exemplo:
+
+```bash
+docker logs protheus_dbaccess -f
+```
+
 ## 💎 Diferenciais de Engenharia & Performance (O "Pulo do Gato")
 
 Este projeto não se limita a "colocar o Protheus dentro do Docker". Ele aplica conceitos avançados de engenharia de confiabilidade e infraestrutura para extrair a máxima performance do ERP:
