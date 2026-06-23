@@ -57,7 +57,11 @@ totvs-protheus-modern-devops/
 │       ├── Dockerfile
 │       └── init-protheus.sql
 │
-├── dbaccess/               # <<--- Nova Camada
+├── license_server/        
+│   ├── Dockerfile
+│   └── entrypoint.sh
+│
+├── dbaccess/               # Gateway
 │   ├── Dockerfile
 │   ├── entrypoint.sh
 │   └── dbaccess.ini.tmpl   # Template de configuração

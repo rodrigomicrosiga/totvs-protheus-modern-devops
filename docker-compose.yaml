@@ -1,5 +1,31 @@
 services:
   # ----------------------------------------------------------------------------
+  # INFRA TIER: TOTVS LICENSE SERVER
+  # ----------------------------------------------------------------------------
+  license_server:
+    build: ./license_server
+    container_name: protheus_license
+    profiles:
+      - postgres
+      - sqlserver
+    networks:
+      - protheus_network
+    ports:
+      - "8020:8020"
+    # Permissões estritas para o dmidecode ler o ID de hardware virtual
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      stack:
+        soft: 1024000
+        hard: 1024000
+    restart: always
+  # ----------------------------------------------------------------------------
   # DATA TIER: POSTGRESQL 16+
   # ----------------------------------------------------------------------------
   postgres_db:
@@ -11,16 +37,16 @@ services:
       - POSTGRES_USER=${POSTGRES_ROOT_USER}
       - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD}
       - POSTGRES_DB=${POSTGRES_ROOT_USER}
-      # Injeção direta e limpa para o escopo do container:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      # TUNING SEM QUEBRAR O SCRIPTD_INIT:
       - POSTGRES_INITDB_ARGS=--data-checksums -c shared_buffers=512MB -c synchronous_commit=off
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    networks:
+      - protheus_network
     restart: always
 
   # ----------------------------------------------------------------------------
@@ -41,6 +67,8 @@ services:
       - "1433:1433"
     volumes:
       - sql_data:/var/opt/mssql
+    networks:
+      - protheus_network
     restart: always
 
   # ----------------------------------------------------------------------------
@@ -54,16 +82,20 @@ services:
       - sqlserver
     environment:
       - DB_TYPE=${DB_TYPE}
-      - DB_SERVER=${DB_SERVER}
+      - DB_SERVER=${DB_SERVER} # <-- Usa 'protheus_postgres' ou 'protheus_sqlserver'
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - LICENSE_SERVER_HOST=${LICENSE_SERVER_HOST}
+      - LICENSE_SERVER_HOST=protheus_license # <-- DNS INTERNO DO DOCKER (Nome do Container)
       - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
     ports:
       - "7890:7890"
+    networks:
+      - protheus_network
     depends_on:
+      license_server:
+        condition: service_started
       postgres_db:
         condition: service_started
         required: false
@@ -71,6 +103,10 @@ services:
         condition: service_started
         required: false
     restart: always
+
+networks:
+  protheus_network:
+    driver: bridge
 
 volumes:
   pg_data:
