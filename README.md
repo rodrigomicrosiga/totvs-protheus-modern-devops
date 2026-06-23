@@ -51,6 +51,10 @@ totvs-protheus-modern-devops/
 ├── .github/
 │   └── workflows/          # Futuro CI/CD
 │
+├── appserver/              # Camada de Aplicação
+│   ├── Dockerfile
+│   └── entrypoint.sh       # Script de boot inteligente e anti-loop
+│
 ├── databases/              # Camada de Dados
 │   ├── postgres/
 │   │   ├── Dockerfile
@@ -67,6 +71,11 @@ totvs-protheus-modern-devops/
 ├── dbaccess/               # Gateway de Dados
 │   ├── Dockerfile
 │   └── entrypoint.sh
+│
+├── protheus/               # Artefatos locais do ERP (Mapeamentos do Host)
+│   ├── apo/                # Repositório de Objetos compilados (RPOs)
+│   ├── system/             # Zips originais da System (Fiscal / Menus)
+│   └── systemload/         # Zips originais da Systemload (Dicionários / Help)
 │
 ├── .env                  # Variáveis de ambiente locais ativas
 ├── .env.example            # Variáveis de ambiente globais modelo
@@ -88,20 +97,24 @@ totvs-protheus-modern-devops/
 
 * [x] **Fase 2: Camada de Conectividade (dbAccess)**
 
-  * [x] [x] Dockerfile do License Server Virtual com instalação 100% silenciosa (`Silent Deploy`) do instalador baseado em Java (IzPack), bypass de interações humanas e injeção do utilitário `dmidecode` para autenticação bem-sucedida.
+  * [x] Dockerfile do License Server Virtual com instalação 100% silenciosa (`Silent Deploy`) do instalador baseado em Java (IzPack), bypass de interações humanas e injeção do utilitário `dmidecode` para autenticação bem-sucedida.
   * [x] Dockerfile do dbAccess inteligente preparado para multi-drivers (`Postgres/SQL Server`).
   * [x] Resiliência de inicialização com scripts de boot que realizam testes de socket TCP e aguardam a prontidão real dos SGBDs.
   * [x] Configuração dinâmica e cirúrgica do dbaccess.ini direto na pasta de execução oficial (multi/), isolando configurações fantasmas do banco de dados inativo e utilizando estruturas modernas de `ConnectionString` (environments).
   * [x] Orquestrador dinâmico global `run.sh` para chaveamento automático de infraestrutura.
 
-* [ ] **Fase 3: Camada de Aplicação Modular (AppServer)**
+* [x] **Fase 3: Camada de Aplicação Modular (AppServer)**
 
-  * [ ] Criação de imagens base via `Multi-Stage build` (redução drástica de tamanho).
-  * [ ] Divisão de perfis de execução (`Core`, `Rest`, `WebAgent`).
-  * [ ] Balanceamento de carga e `SmartClient WebApp`.
+  * [x] Isolamento total de binários estáveis dentro da imagem, eliminando dependências externas do Host.
+  * [x] Arquitetura de volumes totalmente apartada (Named Volumes), mitigando a poluição do Host com dicionários descompactados.
+  * [x] Lógica de boot resiliente com extração inteligente e silenciosa (`-nq`) e travas anti-loop independentes por pacote (`.fiscal_boot_done`, `.menus_boot_done`).
+  * [x] Tratamento dinâmico para espalhar os arquivos de menus diretamente na raiz do diretório `system`.
+  * [x] Renderização dinâmica do arquivo `appserver.ini` em runtime na porta 1234, isolando as credenciais locais e respeitando o RPO Unificado (`tttm120.rpo`).
 
 * [ ] **Fase 4: Orquestração e CI/CD**
-  * [ ] Automação de builds via `GitHub Actions`.
+  * [ ] Criação de imagens base via `Multi-Stage build` (redução drástica de tamanho).
+  * [ ] Divisão de perfis de execução adicionais (`Rest`, `WebAgent`).
+  * [ ] Automação de builds e testes automatizados via `GitHub Actions`.
 
 ---
 
@@ -130,7 +143,13 @@ Coloque os arquivos compactados originais baixados do portal da TOTVS nas suas r
 
 * O pacote do instalador do `License Server` renomeado para `license.tar.gz` dentro de `./license_server/.`
 
-* O pacote do `dbAccess` para Linux renomeado para `dbaccess_linux_x64.tar.gz` dentro de `./dbaccess/.`
+* O pacote do `dbAccess` renomeado para `dbaccess_linux_x64.tar.gz` dentro de `./dbaccess/.`
+
+* O pacote do `AppServer` renomeado para `appserver.tar.gz` em `./protheus/bin/appserver/` e do `SmartClient WebApp` renomeado para `webapp.tar.gz` em `./protheus/bin/smartclient/`.
+
+* Os dicionários (`completos`) e arquivos compactados de infraestrutura em `./protheus/system/` (`fiscal.zip` / `menus.zip`) e em `./protheus/systemload/` (`dicionarios.zip` / `help.zip` / `web.zip`).
+
+* Os RPOs em `./protheus/apo/` (`tttm120.rpo` / `tlpp.rpo`).
 
 
 3. Configurar as Variáveis de Ambiente
@@ -172,6 +191,7 @@ Não há necessidade de editar manualmente as strings de conexão do `.env` ou s
 5. Monitorando Logs
 
 ```bash
+docker logs protheus_master -f
 docker logs protheus_dbaccess -f
 docker logs protheus_license -f
 ```
@@ -181,7 +201,7 @@ docker logs protheus_license -f
 Este projeto não se limita a "colocar o Protheus dentro do Docker". Ele aplica conceitos avançados de engenharia de confiabilidade e infraestrutura para extrair a máxima performance do ERP:
 
 ### ⚙️ Escrita Inteligente de Arquivos de Configuração (.INI)
-Arquivos `.ini` estáticos fixados dentro de imagens Docker quebram o princípio de imutabilidade de infraestrutura. Nossa esteira DevOps gera dinamicamente no momento do boot o `dbaccess.ini` focado estritamente no `DB_TYPE` selecionado. Se o banco ativo for o `Postgres`, o arquivo conterá apenas o bloco do `Postgres` e sua respectiva herança de ambiente (`[POSTGRES/protheus_prod]`), limpando parametrizações de bancos inativos e otimizando a performance de leitura do gateway de dados.
+Arquivos `.ini` estáticos fixados dentro de imagens Docker quebram o princípio de imutabilidade de infraestrutura. Minha esteira DevOps gera dinamicamente no momento do boot o `dbaccess.ini` e o `appserver.ini` focados estritamente nas variáveis do `.env`. Isso garante isolamento completo de credenciais, herança nativa de ambientes corporativos e limpa parametrizações obsoletas, blindando o host contra arquivos temporários órfãos.
 
 ### 🔌 Leitura Segura de Hardware em Containers (dmidecode)
 O `License Server Virtual` da TOTVS necessita ler identificadores físicos via `dmidecode` para validar o `HardLock` com a nuvem (`lscloud.totvs.app`). Em ambientes isolados do `Docker`, isso costuma falhar gerando o erro `/dev/mem: No such file or directory`.
@@ -189,7 +209,7 @@ O `License Server Virtual` da TOTVS necessita ler identificadores físicos via `
 * **A Solução**: Em vez de expor o host usando o modo inseguro `privileged: true`, nossa arquitetura injeta a capacidade estrita de kernel `SYS_RAWIO` e mapeia cirurgicamente o dispositivo `/dev/mem` nas diretivas do orquestrador. O License valida suas licenças com velocidade e total conformidade de segurança.
 
 ### ⏱️ Ajuste Fino de Recursos do Kernel (Ulimits)
-O `binário` do `AppServer` aborta a inicialização ou gera alertas graves quando detecta limites de sistema insuficientes (`Maximum stack size TOO LOW`). Como contêineres rejeitam comandos imperativos do shell como `ulimit -s` por restrições de `runtime`, delegamos o gerenciamento de recursos diretamente ao motor do `Docker Compose`, injetando limites de descritores abertos e alinhando dinamicamente o tamanho do Stack em bytes (1024000).
+O binário do `AppServer` aborta a inicialização ou gera alertas graves quando detecta limites de sistema insuficientes. Como contêineres rejeitam comandos imperativos do shell como `ulimit` em runtime por restrições de segurança, deleguei o gerenciamento de recursos diretamente ao motor do orquestrador `Docker Compose`, injetando o limite de descritores abertos (`nofile`) de forma nativa e segura para os processos.
 
 ### 🚀 Tuning de Performance Extrema para Cargas ERP (PostgreSQL)
 Ambientes de desenvolvimento e testes do Protheus frequentemente sofrem lentidão extrema durante a execução de rotinas automáticas complexas (`ExecAuto`) ou importações massivas de dados. 

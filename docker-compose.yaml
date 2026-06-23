@@ -1,3 +1,8 @@
+networks:
+  protheus_network:
+    name: protheus_network
+    driver: bridge
+
 services:
   # ----------------------------------------------------------------------------
   # INFRA TIER: TOTVS LICENSE SERVER
@@ -21,10 +26,8 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-      stack:
-        soft: 1024000
-        hard: 1024000
     restart: always
+
   # ----------------------------------------------------------------------------
   # DATA TIER: POSTGRESQL 16+
   # ----------------------------------------------------------------------------
@@ -104,10 +107,51 @@ services:
         required: false
     restart: always
 
-networks:
-  protheus_network:
-    driver: bridge
+  # ----------------------------------------------------------------------------
+  # APPLICATION TIER: TOTVS APPSERVER (MASTER CORE)
+  # ----------------------------------------------------------------------------
+  appserver_core:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_master
+    profiles:
+      - postgres
+      - sqlserver
+    networks:
+      - protheus_network
+    ports:
+      - "1234:1234"
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+    volumes:
+      # Mapeamento local estritamente necessário para fontes customizados e RPOs
+      - ./protheus/apo:/totvs/protheus/apo
+      
+      # Volumes isolados e gerenciados pelo Docker (Os binários ficam seguros dentro da imagem)
+      - protheus_system:/totvs/protheus/system
+      - protheus_systemload:/totvs/protheus/systemload
+      - protheus_data:/totvs/protheus/data
+      - protheus_log:/totvs/protheus/log
+      
+      # Mapeamento auxiliar para o entrypoint conseguir ler os zips originais sem extrair localmente
+      - ./protheus/system:/tmp/source_system:ro
+      - ./protheus/systemload:/tmp/source_systemload:ro
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    depends_on:
+      - dbaccess
+    restart: always
 
+# Declaração dos novos volumes gerenciados e isolados do Docker
 volumes:
   pg_data:
   sql_data:
+  protheus_system:
+  protheus_systemload:
+  protheus_data:
+  protheus_log:

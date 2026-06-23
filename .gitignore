@@ -1,3 +1,9 @@
+---
+
+### 🛡️ 2. O `.gitignore` Corrigido
+*Adicionadas as regras estritas no bloco inferior para ignorar os repositórios unificados, customizados e a herança de TLPP, impedindo o tráfego de arquivos pesados da TOTVS para o Git.*
+
+```text
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
@@ -39,3 +45,8 @@ dbaccess/dbaccess_linux_x64.tar.gz
 
 # --- Docker Persistent Data ---
 .docker/
+
+# --- TOTVS RPO Repositories (Strict Deny) ---
+protheus/apo/tttm120.rpo
+protheus/apo/tlpp.rpo
+protheus/apo/custom.rpo
