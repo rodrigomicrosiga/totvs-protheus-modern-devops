@@ -7,9 +7,15 @@ echo "=== [dbAccess] Iniciando processo de configuração dinâmica ==="
 if [ "$DB_TYPE" = "POSTGRES" ]; then
     TARGET_HOST="protheus_postgres"
     TARGET_PORT="5432"
+    CFG_TYPE="POSTGRES"
 elif [ "$DB_TYPE" = "MSSQL" ]; then
     TARGET_HOST="protheus_sqlserver"
     TARGET_PORT="1433"
+    CFG_TYPE="MSSQL"
+elif [ "$DB_TYPE" = "ORACLE" ]; then
+    TARGET_HOST="protheus_oracle"
+    TARGET_PORT="1521"
+    CFG_TYPE="ORACLE"
 else
     echo "❌ Tipo de banco desconhecido no .env: $DB_TYPE"
     exit 1
@@ -22,70 +28,69 @@ while ! nc -z "$TARGET_HOST" "$TARGET_PORT"; do
 done
 echo "✅ Conectividade com o banco de dados estabelecida!"
 
-# Força a criação e entrada no diretório oficial da subpasta
+# Força a criação do diretório de log exigido pelo console do DbAccess
+mkdir -p /opt/totvs/dbaccess/log/
+
+# Força a criação e entrada no diretório oficial da subpasta multi
 mkdir -p /opt/totvs/dbaccess/multi/
 cd /opt/totvs/dbaccess/multi/
 
-echo "📝 Gerando dbaccess.ini oficial em: $(pwd)/dbaccess.ini"
-
-# 3. Escrita do arquivo com base no template homologado
-if [ "$DB_TYPE" = "POSTGRES" ]; then
-    cat <<EOF > dbaccess.ini
-[General]
-LicenseServer=${LICENSE_SERVER_HOST}
-LicensePort=${LICENSE_SERVER_PORT}
-ODBC30=1
-MaxStringSize=500
-UseLargeRecno=1
-ConsoleFile=/opt/totvs/dbaccess/log/dbaccess.log
-ConsoleLog=1
-
-[POSTGRES]
-environments=${DB_NAME}
-clientlibrary=/usr/lib/x86_64-linux-gnu/libodbc.so
-CodePage=WIN1252
-
-[POSTGRES/${DB_NAME}]
-ConnectionMode=2
-ConnectionString="DRIVER={PostgreSQL ANSI};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS}"
-UseRowInsDt=1
-UseRowsStamp=1
-EOF
-
-elif [ "$DB_TYPE" = "MSSQL" ]; then
-    cat <<EOF > dbaccess.ini
-[General]
-LicenseServer=${LICENSE_SERVER_HOST}
-LicensePort=${LICENSE_SERVER_PORT}
-MaxStringSize=500
-UseLargeRecno=1
-ConsoleFile=/opt/totvs/dbaccess/log/dbaccess.log
-ConsoleLog=1
-
-[MSSQL]
-AutoTranslate=0
-environments=${DB_NAME}
-clientlibrary=/usr/lib/x86_64-linux-gnu/libodbc.so
-compression=2
-
-[MSSQL/${DB_NAME}]
-ConnectionMode=2
-ConnectionString="DRIVER={ODBC Driver 18 for SQL Server};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS};TrustServerCertificate=yes"
-IndexSpace=SECONDARY
-UseRowInsDt=1
-UseRowsStamp=1
-EOF
+# Define o caminho correto do utilitário dbaccesscfg
+if [ -f "/opt/totvs/dbaccess/multi/dbaccesscfg" ]; then
+    CFG_BIN="/opt/totvs/dbaccess/multi/dbaccesscfg"
+else
+    CFG_BIN="./dbaccesscfg"
 fi
 
-echo "✅ [dbAccess] dbaccess.ini gerado com sucesso!"
+echo "📝 Limpando resíduos e gerando parâmetros de infraestrutura via dbaccesscfg..."
+
+# Remove arquivo anterior se existir para garantir build limpa pelo utilitário
+rm -f dbaccess.ini
+
+# Parâmetros puramente globais para a seção [GENERAL]
+GEN_OPTS="LicenseServer=${LICENSE_SERVER_HOST};LicensePort=${LICENSE_SERVER_PORT};MaxStringSize=500;UseLargeRecno=1;ConsoleFile=/opt/totvs/dbaccess/log/dbaccess.log;ConsoleLog=1;MemoAsBlob=0"
+
+# 3. Execução do dbaccesscfg com os escopos corrigidos
+if [ "$DB_TYPE" = "ORACLE" ]; then
+    CONN_STR="//${DB_SERVER}:${DB_PORT}/${DB_SERVICE_NAME}"
+    
+    # Exporta a variável de ambiente para o SO do contêiner, garantindo a localização da OCI
+    export ORACLE_HOME=/opt/oracle/instantclient_21_3
+    export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
+
+    BANK_OPTS="ConnectionString=${CONN_STR};ConnectionMode=2;LogAction=0;MemoAsBlob=1;Disable=0;TableSpace=;IndexSpace="
+    
+    $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/opt/oracle/instantclient_21_3/libclntsh.so"
+
+    # Localiza a linha do ClientLibrary e injeta o ORACLE_HOME logo abaixo dela, sem quebras sobressalentes
+    sed -i '/ClientLibrary=\/opt\/oracle\/instantclient_21_3\/libclntsh.so/a ORACLE_HOME=/opt/oracle/instantclient_21_3' dbaccess.ini
+
+elif [ "$DB_TYPE" = "POSTGRES" ]; then
+    CONN_STR="DRIVER={PostgreSQL ANSI};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS}"
+    BANK_OPTS="ConnectionString=${CONN_STR};ConnectionMode=2;UseRowInsDt=1;UseRowsStamp=1"
+    
+    $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/usr/lib/x86_64-linux-gnu/libodbc.so"
+    
+    sed -i '/ClientLibrary=\/usr\/lib\/x86_64-linux-gnu\/libodbc.so/a CodePage=WIN1252' dbaccess.ini
+
+elif [ "$DB_TYPE" = "MSSQL" ]; then
+    CONN_STR="DRIVER={ODBC Driver 18 for SQL Server};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS};TrustServerCertificate=yes"
+    BANK_OPTS="ConnectionString=${CONN_STR};ConnectionMode=2;IndexSpace=SECONDARY;UseRowInsDt=1;UseRowsStamp=1"
+    
+    $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/usr/lib/x86_64-linux-gnu/libodbc.so"
+    
+    sed -i '/ClientLibrary=\/usr\/lib\/x86_64-linux-gnu\/libodbc.so/a AutoTranslate=0\ncompression=2' dbaccess.ini
+fi
+
+# Remove eventuais linhas em branco duplas geradas no fim do arquivo pelo dbaccesscfg
+sed -i '/^$/N;/^\n$/D' dbaccess.ini
+
+echo "✅ [dbAccess] dbaccess.ini gerado e estruturado com sucesso no padrão ideal!"
 echo "🚀 Disparando o TOTVS dbAccess..."
 
 # 4. Execução garantida por caminhos absolutos baseados na estrutura padrão
 if [ -f "/opt/totvs/dbaccess/dbaccess64" ]; then
     exec /opt/totvs/dbaccess/dbaccess64
-elif [ -f "/opt/totvs/dbaccess/multi/dbaccess64" ]; then
-    exec /opt/totvs/dbaccess/multi/dbaccess64
 else
-    # Fallback caso esteja na pasta corrente
     exec ./dbaccess64
 fi

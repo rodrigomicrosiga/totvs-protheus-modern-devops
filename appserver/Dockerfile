@@ -5,7 +5,7 @@ ENV LANG=pt_BR.UTF-8
 ENV LANGUAGE=pt_BR:pt
 ENV LC_ALL=pt_BR.UTF-8
 
-# 1. Instala dependências nativas do AppServer Linux, utilitários e o pacote locales
+# 1. Instala dependências nativas do AppServer Linux, utilitários, locales e suporte a DMI
 RUN apt-get update && apt-get install -y \
     libc6 \
     libtinfo5 \
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     netcat-openbsd \
     unzip \
     locales \
+    dmidecode \
     && echo "pt_BR.UTF-8 UTF-8" > /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 

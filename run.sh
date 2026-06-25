@@ -8,10 +8,11 @@ set -e
 SGBD=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 COMMAND=$2
 
-# Valida se o comando base foi passado
-if [ -z "$SGBD" ] || { [ "$SGBD" != "postgres" ] && [ "$SGBD" != "mssql" ] && [ "$SGBD" != "down" ]; }; then
-    echo "❌ Uso correto: ./run.sh [postgres | mssql | down] [opcional: command]"
+# Valida se o comando base foi passado de forma correta
+if [ -z "$SGBD" ] || { [ "$SGBD" != "postgres" ] && [ "$SGBD" != "mssql" ] && [ "$SGBD" != "oracle" ] && [ "$SGBD" != "down" ]; }; then
+    echo "❌ Uso correto: ./run.sh [postgres | mssql | oracle | down] [opcional: command]"
     echo "👉 Exemplo: ./run.sh postgres"
+    echo "👉 Exemplo: ./run.sh oracle"
     echo "👉 Exemplo: ./run.sh mssql down"
     exit 1
 fi
@@ -19,7 +20,7 @@ fi
 # Cenário de destruição total do ambiente (down)
 if [ "$SGBD" = "down" ]; then
     echo "🛑 Derrubando todos os perfis e limpando volumes persistentes..."
-    docker compose --profile postgres --profile sqlserver down -v
+    docker compose --profile postgres --profile sqlserver --profile oracle down -v
     echo "✅ Ambiente totalmente limpo!"
     exit 0
 fi
@@ -38,6 +39,13 @@ elif [ "$SGBD" = "mssql" ]; then
     sed -i 's/^DB_SERVER=.*/DB_SERVER=protheus_sqlserver/' .env
     sed -i 's/^DB_PORT=.*/DB_PORT=1433/' .env
     PROFILE="sqlserver"
+
+elif [ "$SGBD" = "oracle" ]; then
+    echo "⚙️  Configurando .env dinamicamente para ORACLE DATABASE 21c..."
+    sed -i 's/^DB_TYPE=.*/DB_TYPE=ORACLE/' .env
+    sed -i 's/^DB_SERVER=.*/DB_SERVER=protheus_oracle/' .env
+    sed -i 's/^DB_PORT=.*/DB_PORT=1521/' .env
+    PROFILE="oracle"
 fi
 
 # Determina a ação do Docker Compose (default: up)

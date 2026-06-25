@@ -31,6 +31,7 @@ graph TD
         direction LR
         PG[(PostgreSQL 16+)]
         MS[(MS SQL Server 2022)]
+        OR[(Oracle 21c EE CDB/PDB)]
     end
 
     SC --> APP
@@ -41,6 +42,7 @@ graph TD
     DBA -->|Validação de Chaves| LIC
     DBA -->|Escolha Dinâmica| PG
     DBA -->|Escolha Dinâmica| MS
+    DBA -->|Escolha Dinâmica| OR
 ```
 
 ## 🚀 Estrutura de diretórios do Projeto
@@ -59,25 +61,28 @@ totvs-protheus-modern-devops/
 │   ├── postgres/
 │   │   ├── Dockerfile
 │   │   └── init-protheus.sh
-│   └── sqlserver/
+│   ├── sqlserver/
+│   │   ├── Dockerfile
+│   │   └── init-protheus.sql
+│   └── oracle/             # Nova Stack de Persistência Multitenant
 │       ├── Dockerfile
-│       └── init-protheus.sql
+│       └── init-protheus.sh # Script de provisionamento local de PDB e Tablespace
 │
 ├── license_server/         # Centralização de Licenças
 │   ├── Dockerfile
 │   ├── entrypoint.sh
 │   └── license.tar.gz      # Instalador oficial IzPack da TOTVS
 │
-├── dbaccess/               # Gateway de Dados
+├── dbaccess/               # Gateway de Dados (Preparado para OCI8 e ODBC)
 │   ├── Dockerfile
-│   └── entrypoint.sh
+│   └── entrypoint.sh       # Script ninja com geração via dbaccesscfg e sed
 │
 ├── protheus/               # Artefatos locais do ERP (Mapeamentos do Host)
 │   ├── apo/                # Repositório de Objetos compilados (RPOs)
 │   ├── system/             # Zips originais da System (Fiscal / Menus)
 │   └── systemload/         # Zips originais da Systemload (Dicionários / Help)
 │
-├── .env                  # Variáveis de ambiente locais ativas
+├── .env                    # Variáveis de ambiente locais ativas
 ├── .env.example            # Variáveis de ambiente globais modelo
 ├── docker-compose.yml      # Orquestrador local por perfis
 ├── run.sh                  # Orquestrador dinâmico de ambiente
@@ -90,17 +95,18 @@ totvs-protheus-modern-devops/
 
 * [x] **Fase 1: Camada de Dados Otimizada**
 
-  * [x] Containerização do PostgreSQL 16+ parametrizado com as LC_tags oficiais da TOTVS (`WIN1252`, `LC_COLLATE=C`).
-  * [x] Containerização do MS SQL Server 2022 Developer com Collation Binária (`Latin1_General_BIN`).
+  * [x] Containerização do `PostgreSQL 16+` parametrizado com as LC_tags oficiais da TOTVS (`WIN1252`, `LC_COLLATE=C`).
+  * [x] Containerização do `MS SQL Server 2022 Developer` com Collation Binária (`Latin1_General_BIN`).
+  * [x] Containerização do `Oracle 21c Enterprise Edition` configurado nativamente com a trava de engine exigida `CURSOR_SHARING=EXACT`.
   * [x] Inicialização dinâmica de bancos de dados, usuários e permissões via variáveis de ambiente.
   * [x] Tuning inicial de performance de disco e memória para ambientes de desenvolvimento/homologação.
 
 * [x] **Fase 2: Camada de Conectividade (dbAccess)**
 
   * [x] Dockerfile do License Server Virtual com instalação 100% silenciosa (`Silent Deploy`) do instalador baseado em Java (IzPack), bypass de interações humanas e injeção do utilitário `dmidecode` para autenticação bem-sucedida.
-  * [x] Dockerfile do dbAccess inteligente preparado para multi-drivers (`Postgres/SQL Server`).
+  * [x] Dockerfile do dbAccess inteligente preparado para multi-drivers (`Postgres/SQL Server/Oracle`).
   * [x] Resiliência de inicialização com scripts de boot que realizam testes de socket TCP e aguardam a prontidão real dos SGBDs.
-  * [x] Configuração dinâmica e cirúrgica do dbaccess.ini direto na pasta de execução oficial (multi/), isolando configurações fantasmas do banco de dados inativo e utilizando estruturas modernas de `ConnectionString` (environments).
+  * [x] Automação imperativa do `dbaccess.ini` direto na pasta de execução oficial (multi/), utilizando a ferramenta oficial `dbaccesscfg` para realizar a encriptação de senhas em `runtime`, eliminando dependências do `DBMonitor` gráfico.
   * [x] Orquestrador dinâmico global `run.sh` para chaveamento automático de infraestrutura.
 
 * [x] **Fase 3: Camada de Aplicação Modular (AppServer)**
@@ -122,7 +128,7 @@ totvs-protheus-modern-devops/
 
 * `Docker & Docker Compose` (Isolamento e orquestração)
 
-* `PostgreSQL 16+ / MS SQL Server 2022` (Motores de banco de dados suportados)
+* `PostgreSQL 16+ / MS SQL Server 2022 / Oracle 21c EE` (Motores de banco de dados suportados)
 
 * `Shell Script / T-SQL` (Automação de inicialização estruturada)
 
@@ -160,6 +166,18 @@ Copie o arquivo `.env.example` para `.env` e configure o nome do banco, usuário
 cp .env.example .env
 ```
 
+Garanta o mapeamento das chaves de persistência ativas para o banco desejado:
+
+```ini
+# Opção Postgres: DB_TYPE=POSTGRES | DB_SERVER=protheus_postgres  | DB_PORT=5432
+# Opção MSSQL:    DB_TYPE=MSSQL    | DB_SERVER=protheus_sqlserver | DB_PORT=1433
+# Opção Oracle:   DB_TYPE=ORACLE   | DB_SERVER=protheus_oracle    | DB_PORT=1521  | DB_SERVICE_NAME=ORCLPDB1
+DB_TYPE=ORACLE
+DB_SERVER=protheus_oracle
+DB_PORT=1521
+DB_SERVICE_NAME=ORCLPDB1  # <-- Destino real da rede no Oracle (Pluggable Database)
+```
+
 4. Orquestração Automática com o Painel `run.sh`
 
 Não há necessidade de editar manualmente as strings de conexão do `.env` ou se preocupar com comandos longos do docker compose. Use o script de controle global:
@@ -176,10 +194,16 @@ Não há necessidade de editar manualmente as strings de conexão do `.env` ou s
 ./run.sh mssql
 ```
 
+* Para rodar o ecossistema com `Oracle 21c EE`:
+
+```bash
+./run.sh oracle
+```
+
 * Para desligar o perfil ativo limpando volumes temporários:
 
 ```bash
-./run.sh postgres down   # Ou mssql down
+./run.sh postgres down   # Ou mssql down / oracle down
 ```
 
 * Wipe Total (Destruição segura e limpeza profunda de toda a infra):
@@ -194,14 +218,24 @@ Não há necessidade de editar manualmente as strings de conexão do `.env` ou s
 docker logs protheus_master -f
 docker logs protheus_dbaccess -f
 docker logs protheus_license -f
+docker logs protheus_postgres -f # Se utilizar postgres
+docker logs protheus_mssql -f # Se utilizar mssql
+docker logs protheus_oracle -f # Se utilizar oracle
 ```
 
 ## 💎 Diferenciais de Engenharia & Performance (O "Pulo do Gato")
 
 Este projeto não se limita a "colocar o Protheus dentro do Docker". Ele aplica conceitos avançados de engenharia de confiabilidade e infraestrutura para extrair a máxima performance do ERP:
 
-### ⚙️ Escrita Inteligente de Arquivos de Configuração (.INI)
-Arquivos `.ini` estáticos fixados dentro de imagens Docker quebram o princípio de imutabilidade de infraestrutura. Minha esteira DevOps gera dinamicamente no momento do boot o `dbaccess.ini` e o `appserver.ini` focados estritamente nas variáveis do `.env`. Isso garante isolamento completo de credenciais, herança nativa de ambientes corporativos e limpa parametrizações obsoletas, blindando o host contra arquivos temporários órfãos.
+### ⚙️ Escrita Inteligente e Encriptação de Arquivos com `dbaccesscfg`
+Arquivos `.ini` estáticos fixados dentro de imagens Docker quebram o princípio de imutabilidade de infraestrutura. Além disso, o driver nativo `OCI8` da Oracle no DbAccess exige que as credenciais de login (`user=` e `password=`) sejam salvas de forma estruturada e **criptografada**, impossibilitando a injeção em texto plano via scripts de shell tradicionais.
+
+* **A Solução Ninja**: O container do `protheus_dbaccess` utiliza em seu ciclo de boot o utilitário proprietário `dbaccesscfg`. O script de entrada passa em modo silencioso os parâmetros e strings de rede do `.env`, forçando o executável a computar dinamicamente o hash da senha em runtime e gravar um `dbaccess.ini` 100% aderente. O processo é unificado de forma idêntica para os três bancos, e comandos `sed` cirúrgicos limpam quebras de linhas indesejadas no arquivo final.
+
+### 🗜️ Isolamento de Escopo no Oracle Multitenant (CDB/PDB)
+Imagens `Docker` do `Oracle 21c Enterprise` gerenciam dados por meio de `Arquiteturas Multitenant` (bancos de dados plugáveis). Rodar scripts de inicialização globais na raiz (`CDB$ROOT`) polui o dicionário de dados do sistema e corrompe o isolamento de tabelas do ERP.
+
+* **A Solução**: O script de provisionamento `./databases/oracle/init-protheus.sh` força nativamente o chaveamento de sessão para o banco plugável do Protheus (`ALTER SESSION SET CONTAINER = ORCLPDB1;`). Ele isola o arquivo físico da `Tablespace (protheus_data_pdb.dbf`) do lixo residual órfão da raiz, cria o usuário do ERP no escopo correto de runtime e concede os privilégios mínimos exigidos (`CONNECT, RESOURCE, DBA`) de forma segura.
 
 ### 🔌 Leitura Segura de Hardware em Containers (dmidecode)
 O `License Server Virtual` da TOTVS necessita ler identificadores físicos via `dmidecode` para validar o `HardLock` com a nuvem (`lscloud.totvs.app`). Em ambientes isolados do `Docker`, isso costuma falhar gerando o erro `/dev/mem: No such file or directory`.

@@ -13,6 +13,7 @@ services:
     profiles:
       - postgres
       - sqlserver
+      - oracle
     networks:
       - protheus_network
     ports:
@@ -75,6 +76,27 @@ services:
     restart: always
 
   # ----------------------------------------------------------------------------
+  # DATA TIER: ORACLE DATABASE 21.3 SE2
+  # ----------------------------------------------------------------------------
+  oracle_db:
+    build: ./databases/oracle
+    container_name: protheus_oracle
+    profiles:
+      - oracle
+    environment:
+      - ORACLE_PWD=${POSTGRES_ROOT_PASSWORD}
+      - ORACLE_CHARACTERSET=WE8MSWIN1252
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    networks:
+      - protheus_network
+    restart: always
+
+  # ----------------------------------------------------------------------------
   # CONNECTIVITY TIER: TOTVS DBACCESS
   # ----------------------------------------------------------------------------
   dbaccess:
@@ -83,14 +105,16 @@ services:
     profiles:
       - postgres
       - sqlserver
+      - oracle
     environment:
       - DB_TYPE=${DB_TYPE}
-      - DB_SERVER=${DB_SERVER} # <-- Usa 'protheus_postgres' ou 'protheus_sqlserver'
+      - DB_SERVER=${DB_SERVER}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
+      - DB_SERVICE_NAME=${DB_SERVICE_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - LICENSE_SERVER_HOST=protheus_license # <-- DNS INTERNO DO DOCKER (Nome do Container)
+      - LICENSE_SERVER_HOST=protheus_license
       - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
     ports:
       - "7890:7890"
@@ -103,6 +127,9 @@ services:
         condition: service_started
         required: false
       sqlserver_db:
+        condition: service_started
+        required: false
+      oracle_db:
         condition: service_started
         required: false
     restart: always
@@ -118,6 +145,7 @@ services:
     profiles:
       - postgres
       - sqlserver
+      - oracle
     networks:
       - protheus_network
     ports:
@@ -139,6 +167,11 @@ services:
       # Mapeamento auxiliar para o entrypoint conseguir ler os zips originais sem extrair localmente
       - ./protheus/system:/tmp/source_system:ro
       - ./protheus/systemload:/tmp/source_systemload:ro
+    # Permissões estritas para o dmidecode ler a DMI e assinar as chaves de hardware do AppServer
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
     ulimits:
       nofile:
         soft: 65536
@@ -151,6 +184,7 @@ services:
 volumes:
   pg_data:
   sql_data:
+  oracle_data:
   protheus_system:
   protheus_systemload:
   protheus_data:
