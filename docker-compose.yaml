@@ -5,20 +5,15 @@ networks:
 
 services:
   # ----------------------------------------------------------------------------
-  # INFRA TIER: TOTVS LICENSE SERVER
+  # INFRA & CONNECTIVITY TIER (Sempre iniciados)
   # ----------------------------------------------------------------------------
   license_server:
     build: ./license_server
     container_name: protheus_license
-    profiles:
-      - postgres
-      - sqlserver
-      - oracle
     networks:
       - protheus_network
     ports:
-      - "8020:8020"
-    # Permissões estritas para o dmidecode ler o ID de hardware virtual
+      - "${LICENSE_SERVER_PORT}:${LICENSE_SERVER_PORT}"
     cap_add:
       - SYS_RAWIO
     devices:
@@ -29,145 +24,117 @@ services:
         hard: 65536
     restart: always
 
-  # ----------------------------------------------------------------------------
-  # DATA TIER: POSTGRESQL 16+
-  # ----------------------------------------------------------------------------
   postgres_db:
     build: ./databases/postgres
     container_name: protheus_postgres
     profiles:
       - postgres
     environment:
-      - POSTGRES_USER=${POSTGRES_ROOT_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_ROOT_USER}
+      - POSTGRES_USER=${POSTGRES_ROOT_USER:-}
+      - POSTGRES_PASSWORD=${POSTGRES_ROOT_PASSWORD:-}
+      - POSTGRES_DB=${POSTGRES_ROOT_USER:-}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - POSTGRES_INITDB_ARGS=--data-checksums -c shared_buffers=512MB -c synchronous_commit=off
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"  # <-- Porta Parametrizada
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
       - protheus_network
     restart: always
 
-  # ----------------------------------------------------------------------------
-  # DATA TIER: MS SQL SERVER 2022
-  # ----------------------------------------------------------------------------
-  sqlserver_db:
-    build: ./databases/sqlserver
-    container_name: protheus_sqlserver
+  mssql_db:
+    build: ./databases/mssql
+    container_name: protheus_mssql
     profiles:
-      - sqlserver
+      - mssql
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD:-}
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
     ports:
-      - "1433:1433"
+      - "${MSSQL_PORT:-1433}:${MSSQL_PORT:-1433}"  # <-- Porta Parametrizada
     volumes:
-      - sql_data:/var/opt/mssql
+      - mssql_data:/var/opt/mssql
     networks:
       - protheus_network
     restart: always
 
-  # ----------------------------------------------------------------------------
-  # DATA TIER: ORACLE DATABASE 21.3 SE2
-  # ----------------------------------------------------------------------------
   oracle_db:
     build: ./databases/oracle
     container_name: protheus_oracle
     profiles:
       - oracle
     environment:
-      - ORACLE_PWD=${POSTGRES_ROOT_PASSWORD}
+      - ORACLE_PWD=${ORACLE_ROOT_PASSWORD:-}
       - ORACLE_CHARACTERSET=WE8MSWIN1252
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
     ports:
-      - "1521:1521"
+      - "${ORACLE_PORT:-1521}:${ORACLE_PORT:-1521}"  # <-- Porta Parametrizada
     volumes:
       - oracle_data:/opt/oracle/oradata
     networks:
       - protheus_network
     restart: always
 
-  # ----------------------------------------------------------------------------
-  # CONNECTIVITY TIER: TOTVS DBACCESS
-  # ----------------------------------------------------------------------------
   dbaccess:
     build: ./dbaccess
     container_name: protheus_dbaccess
-    profiles:
-      - postgres
-      - sqlserver
-      - oracle
+    networks:
+      - protheus_network
+    env_file:
+      - .env
+      - .env.${SGBD}  # <-- Formato limpo e compatível com todas as versões do Compose
     environment:
       - DB_TYPE=${DB_TYPE}
       - DB_SERVER=${DB_SERVER}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
-      - DB_SERVICE_NAME=${DB_SERVICE_NAME}
+      - DB_SERVICE_NAME=${DB_SERVICE_NAME:-}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
-      - LICENSE_SERVER_HOST=protheus_license
+      - LICENSE_SERVER_HOST=${LICENSE_SERVER}
       - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
     ports:
-      - "7890:7890"
-    networks:
-      - protheus_network
-    depends_on:
-      license_server:
-        condition: service_started
-      postgres_db:
-        condition: service_started
-        required: false
-      sqlserver_db:
-        condition: service_started
-        required: false
-      oracle_db:
-        condition: service_started
-        required: false
+      - "${DBACCESS_PORT}:${DBACCESS_PORT}"
     restart: always
 
   # ----------------------------------------------------------------------------
-  # APPLICATION TIER: TOTVS APPSERVER (MASTER CORE)
+  # APPLICATION TIER: TOTVS APPSERVER CORE MASTER (Sempre iniciado)
   # ----------------------------------------------------------------------------
   appserver_core:
     build:
       context: .
       dockerfile: ./appserver/Dockerfile
-    container_name: protheus_master
-    profiles:
-      - postgres
-      - sqlserver
-      - oracle
+    container_name: protheus_core
     networks:
       - protheus_network
     ports:
-      - "1234:1234"
+      - "${CORE_PORT_MULTI}:${CORE_PORT_MULTI}"
+      - "${APP_MONITOR_PORT}:${APP_MONITOR_PORT}"
     environment:
       - ENV_NAME=${ENV_NAME}
       - DB_NAME=${DB_NAME}
       - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - APP_PORT_MULTI=${CORE_PORT_MULTI}
+      - APP_MONITOR_PORT=${APP_MONITOR_PORT}
     volumes:
-      # Mapeamento local estritamente necessário para fontes customizados e RPOs
       - ./protheus/apo:/totvs/protheus/apo
-      
-      # Volumes isolados e gerenciados pelo Docker (Os binários ficam seguros dentro da imagem)
       - protheus_system:/totvs/protheus/system
       - protheus_systemload:/totvs/protheus/systemload
       - protheus_data:/totvs/protheus/data
       - protheus_log:/totvs/protheus/log
-      
-      # Mapeamento auxiliar para o entrypoint conseguir ler os zips originais sem extrair localmente
       - ./protheus/system:/tmp/source_system:ro
       - ./protheus/systemload:/tmp/source_systemload:ro
-    # Permissões estritas para o dmidecode ler a DMI e assinar as chaves de hardware do AppServer
     cap_add:
       - SYS_RAWIO
     devices:
@@ -179,11 +146,93 @@ services:
     depends_on:
       - dbaccess
     restart: always
+    command: ["core"]
 
-# Declaração dos novos volumes gerenciados e isolados do Docker
+  # ----------------------------------------------------------------------------
+  # APPLICATION TIER: SPECIALIST SERVICES (Perfis dedicados sob demanda)
+  # ----------------------------------------------------------------------------
+  appserver_rest:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_rest
+    profiles:
+      - rest
+    networks:
+      - protheus_network
+    ports:
+      - "${REST_PORT_MULTI}:${REST_PORT_MULTI}"
+      - "${REST_HTTP_PORT}:${REST_HTTP_PORT}"
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - APP_PORT_MULTI=${REST_PORT_MULTI}
+      - REST_HTTP_PORT=${REST_HTTP_PORT}
+      - REST_PREP_ENV=${REST_PREP_ENV}
+      - REST_INSTANCES=${REST_INSTANCES}
+      - REST_URI=${REST_URI}
+    volumes:
+      - ./protheus/apo:/totvs/protheus/apo
+      - protheus_system:/totvs/protheus/system
+      - protheus_data:/totvs/protheus/data
+      - protheus_log:/totvs/protheus/log
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: always
+    command: ["rest"]
+
+  appserver_telnet:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_telnet
+    profiles:
+      - telnet
+    networks:
+      - protheus_network
+    ports:
+      - "${TELNET_PORT_MULTI}:${TELNET_PORT_MULTI}"
+      - "${TELNET_PORT}:${TELNET_PORT}"
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - APP_PORT_MULTI=${TELNET_PORT_MULTI}
+      - TELNET_PORT=${TELNET_PORT}
+    volumes:
+      - ./protheus/apo:/totvs/protheus/apo
+      - protheus_system:/totvs/protheus/system
+      - protheus_data:/totvs/protheus/data
+      - protheus_log:/totvs/protheus/log
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: always
+    command: ["telnet"]
+
 volumes:
   pg_data:
-  sql_data:
+  mssql_data:
   oracle_data:
   protheus_system:
   protheus_systemload:

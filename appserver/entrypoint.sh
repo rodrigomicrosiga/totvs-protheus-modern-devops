@@ -1,16 +1,32 @@
 #!/bin/bash
 set -e
 
-ROLE=${1:-core}
-echo "=== [AppServer] Inicializando Modo: [${ROLE^^}] ==="
+# Traduz o argumento do container em minúsculas (core, rest, telnet)
+ROLE=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+echo "=== [AppServer] Inicializando Modo Especialista: [${ROLE^^}] ==="
 
-# 1. Aguarda a retaguarda de infraestrutura estar online
+# Mapeamento dinâmico das variáveis globais injetadas pelo Docker Compose
+PORT=${APP_PORT_MULTI}
+LICENSE_HOST=${LICENSE_SERVER:-protheus_license}
+LICENSE_PORT=${LICENSE_SERVER_PORT:-5555}
+DB_PORT_INI=${DBACCESS_PORT:-7890}
+DB_SERVER_INI=${DBACCESS_SERVER:-protheus_dbaccess}
+
+# Tratamento exclusivo para o nome do log do ConsoleFile baseado no serviço
+case "$ROLE" in
+    core)   LOG_NAME="appserver_core.log"   ;;
+    rest)   LOG_NAME="appserver_rest.log"   ;;
+    telnet) LOG_NAME="appserver_telnet.log" ;;
+    *)      LOG_NAME="appserver.log"        ;;
+esac
+
+# 1. Aguarda a retaguarda de infraestrutura estar online de forma flexível
 echo "⏳ Validando conectividade com o barramento de infraestrutura..."
-while ! nc -z protheus_dbaccess 7890; do sleep 1; done
-while ! nc -z protheus_license 5555; do sleep 1; done
+while ! nc -z "$DB_SERVER_INI" "$DB_PORT_INI"; do sleep 1; done
+while ! nc -z "$LICENSE_HOST" "$LICENSE_PORT"; do sleep 1; done
 echo "✅ Conectividade com DbAccess e License Server estabelecida!"
 
-# 2. Carga Inicial Isolada com Injeção Segura de Travas
+# 2. Carga Inicial Isolada com Injeção Segura de Travas (Fiel ao commit de ontem)
 echo "📦 Verificando integridade dos volumes isolados..."
 
 # Garante a árvore mínima necessária dentro dos volumes do Docker
@@ -36,7 +52,6 @@ if [ ! -f "/totvs/protheus/system/.menus_boot_done" ]; then
         unzip -nq /tmp/source_system/menus.zip -d /totvs/protheus/system/
         
         # Tratamento dinâmico: Se os menus por acaso caírem em uma subpasta, move para a raiz.
-        # Se os arquivos já vierem na raiz do zip (seu cenário atual), o script segue reto com segurança.
         if [ -d "/totvs/protheus/system/menus" ]; then
             echo "📂 Ajustando estrutura de diretórios do menus.zip para a raiz da system..."
             mv /totvs/protheus/system/menus/* /totvs/protheus/system/ 2>/dev/null || true
@@ -63,8 +78,9 @@ fi
 
 # 3. Renderização dinâmica do appserver.ini com as variáveis validadas
 cd /totvs/protheus/bin/appserver
-echo "📝 Gerando appserver.ini dinâmico..."
+echo "📝 Gerando appserver.ini dinâmico para o modo [${ROLE^^}]..."
 
+# Escrita limpa sem escape de variáveis locais
 cat <<EOF > appserver.ini
 [${ENV_NAME}]
 SourcePath=/totvs/protheus/apo
@@ -79,9 +95,9 @@ LocalFiles=SQLITE
 LocalDbExtension=.db
 StartSysInDB=1
 TopMemoMega=50
-DBPort=7890
+DBPort=${DB_PORT_INI}
 DBAlias=${DB_NAME}
-DBServer=protheus_dbaccess
+DBServer=${DB_SERVER_INI}
 DBDatabase=${DB_TYPE}
 
 [Drivers]
@@ -91,11 +107,11 @@ MultiProtocolPortSecure=0
 
 [TCP]
 TYPE=TCPIP
-Port=1234
+Port=${PORT}
 
 [LicenseClient]
-Server=protheus_license
-Port=5555
+Server=${LICENSE_HOST}
+Port=${LICENSE_PORT}
 
 [General]
 app_environment=${ENV_NAME}
@@ -103,22 +119,28 @@ ShowFullLog=0
 MaxStringSize=500
 MaxQuerySize=31960
 PowerSchemeShowUpgradeSuggestion=0
-ConsoleFile=/totvs/protheus/log/appserver.log
+ConsoleFile=/totvs/protheus/log/${LOG_NAME}
 ConsoleLog=1
 AsyncConsoleLog=1
 BuildKillUsers=1
 
 [WebApp]
-Port=1234
+Port=${PORT}
 LastMainProg=SIGAADV,SIGACFG,MPSDU,SIGAMDI
 EnvServer=${ENV_NAME}
 NonStopOnError=1
+EOF
+
+# Injeção cirúrgica de regras de governança exclusivas baseadas na ROLE
+if [ "$ROLE" = "core" ]; then
+    cat <<EOF >> appserver.ini
 
 [WebMonitor]
 Enable=1
 
 [APP_MONITOR]
 Enable=1
+Gui=1
 
 [TDS]
 AllowMonitor=*
@@ -128,15 +150,70 @@ EnableDisconnectUser=*
 EnableSendMessage=*
 EnableBlockNewConnection=*
 EnableStopServer=*
+EOF
+else
+    cat <<EOF >> appserver.ini
+
+[WebMonitor]
+Enable=0
+
+[APP_MONITOR]
+Enable=0
+Gui=0
+EOF
+fi
+
+# Bloco estrutural WebApp comum a todos
+cat <<EOF >> appserver.ini
 
 [WebApp/webapp]
 MPP=
 EOF
 
+# Append dos blocos especialistas dedicados (REST / TELNET)
+if [ "$ROLE" = "rest" ]; then
+    cat <<EOF >> appserver.ini
+
+[HTTPJOB]
+Main=HTTP_START
+Environment=${ENV_NAME}
+
+[ONSTART]
+Jobs=HTTPJOB
+RefreshRate=120
+
+[HTTPV11]
+Enable=1
+Sockets=HTTPREST
+
+[HTTPREST]
+Port=${REST_HTTP_PORT}
+URIs=HTTPURI
+SECURITY=1
+
+[HTTPURI]
+URL=${REST_URI}
+PrepareIn=${REST_PREP_ENV}
+Instances=${REST_INSTANCES}
+Stateless=1
+CORSEnable=1
+AllowOrigin=*
+EOF
+elif [ "$ROLE" = "telnet" ]; then
+    cat <<EOF >> appserver.ini
+
+[TELNET]
+Enable=1
+Environment=${ENV_NAME}
+Main=SIGAACD
+Port=${TELNET_PORT}
+EOF
+fi
+
 # 4. Inicialização do Binário Oficial com Verificação de Sanidade
 echo "🔍 Validando integridade física do executável TOTVS..."
 if [ ! -f "appsrvlinux" ]; then
-    echo "❌ ERRO CRÍTICO: O binário appsrvlinux NÃO foi encontrado no diretório atual ($(pwd))!"
+    echo "❌ ERRO CRÍTICO: O binário appsrvlinux NÃO foi encontrado no diretório atual (\$(pwd))!"
     echo "📂 Conteúdo atual da pasta bin/appserver:"
     ls -la
     exit 1
@@ -144,6 +221,12 @@ fi
 
 echo "🔑 Forçando permissões de execução no binário..."
 chmod +x appsrvlinux
+
+# Se for o core master, assinala o semáforo para liberar os nós especialistas
+if [ "$ROLE" = "core" ]; then
+    echo "🎯 Criando semáforo de prontidão (.protheus_db_ready)..."
+    touch /totvs/protheus/system/.protheus_db_ready
+fi
 
 echo "🚀 Disparando TOTVS Application Server Linux..."
 exec ./appsrvlinux -console
