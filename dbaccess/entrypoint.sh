@@ -60,41 +60,69 @@ if [ "$DB_TYPE_NORM" = "ORACLE" ]; then
     export ORACLE_HOME=/opt/oracle/instantclient_21_3
     export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
 
-    BANK_OPTS="ConnectionString=${CONN_STR};ConnectionMode=2;LogAction=0;MemoAsBlob=1;Disable=0;TableSpace=;IndexSpace="
+    BANK_OPTS="ConnectionMode=2;LogAction=0;MemoAsBlob=1;Disable=0;TableSpace=;IndexSpace="
     
     $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/opt/oracle/instantclient_21_3/libclntsh.so"
 
     sed -i '/ClientLibrary=\/opt\/oracle\/instantclient_21_3\/libclntsh.so/a ORACLE_HOME=/opt/oracle/instantclient_21_3' dbaccess.ini
 
 elif [ "$DB_TYPE_NORM" = "POSTGRES" ]; then
-    # Passamos parâmetros básicos que não quebram o utilitário
     BANK_OPTS="ConnectionMode=2;UseRowInsDt=1;UseRowsStamp=1"
     
     $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/usr/lib/x86_64-linux-gnu/libodbc.so"
     
-    # Injetamos a ConnectionString ODBC nativa e o CodePage cirurgicamente via sed logo abaixo do password cifrado
     CONN_STR="DRIVER={PostgreSQL ANSI};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS}"
     sed -i "/password=/a ConnectionString=${CONN_STR}" dbaccess.ini
     sed -i '/ClientLibrary=\/usr\/lib\/x86_64-linux-gnu\/libodbc.so/a CodePage=WIN1252' dbaccess.ini
+    
+    # Limpa chaves vazias ou inválidas herdadas para o Postgres
+    sed -i '/^TableSpace=/d' dbaccess.ini
+    sed -i '/^IndexSpace=/d' dbaccess.ini
 
 elif [ "$DB_TYPE_NORM" = "MSSQL" ]; then
-    # Passamos parâmetros básicos que não quebram o utilitário
-    BANK_OPTS="ConnectionMode=2;IndexSpace=SECONDARY;UseRowInsDt=1;UseRowsStamp=1"
+    BANK_OPTS="ConnectionMode=2;UseRowInsDt=1;UseRowsStamp=1"
     
     $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/usr/lib/x86_64-linux-gnu/libodbc.so"
     
-    # Injetamos a ConnectionString ODBC nativa do SQL Server e os parâmetros extras cirurgicamente
     CONN_STR="DRIVER={ODBC Driver 18 for SQL Server};SERVER=${DB_SERVER};PORT=${DB_PORT};DATABASE=${DB_NAME};Uid=${DB_USER};Pwd=${DB_PASS};TrustServerCertificate=yes"
     sed -i "/password=/a ConnectionString=${CONN_STR}" dbaccess.ini
     sed -i '/ClientLibrary=\/usr\/lib\/x86_64-linux-gnu\/libodbc.so/a AutoTranslate=0\ncompression=2' dbaccess.ini
+
+    # Expurgos cirúrgicos para o MSSQL
+    sed -i '/^TableSpace=/d' dbaccess.ini
+    sed -i '/^IndexSpace=/d' dbaccess.ini
 fi
 
 # Remove eventuais linhas em branco duplas geradas no fim do arquivo pelo dbaccesscfg
 sed -i '/^$/N;/^\n$/D' dbaccess.ini
 
 echo "✅ [dbAccess] dbaccess.ini gerado e estruturado com sucesso no padrão ideal!"
-echo "🚀 Disparando o TOTVS dbAccess..."
 
+# --- INJEÇÃO DA VARIÁVEL GLOBAL PARA EXECUÇÃO DO BANCO ORACLE ---
+if [ "$DB_TYPE_NORM" = "ORACLE" ]; then
+    export ORACLE_HOME=/opt/oracle/instantclient_21_3
+    export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
+
+    # Passamos os parâmetros estruturais limpos para inicializar a seção do banco
+    BANK_OPTS="ConnectionMode=2;LogAction=0;MemoAsBlob=1;Disable=0"
+    
+    # Executa o utilitário apontando para a biblioteca nativa clntsh
+    $CFG_BIN -u "${DB_USER}" -p "${DB_PASS}" -d "${CFG_TYPE}" -a "${DB_NAME}" -o "${BANK_OPTS}" -g "${GEN_OPTS}" -c "/opt/oracle/instantclient_21_3/libclntsh.so"
+
+    # --- INJEÇÃO CIRÚRGICA DA CONNECTION STRING EZCONNECT ---
+    # Monta o formato bruto aceito pelo driver: host:porta/servico
+    CONN_STR="${DB_SERVER}:${DB_PORT}/${DB_SERVICE_NAME}"
+    
+    # Injeta a string de conexão e o ORACLE_HOME de forma correta abaixo do password criptografado
+    sed -i "/password=/a ConnectionString=${CONN_STR}" dbaccess.ini
+    sed -i '/ClientLibrary=\/opt\/oracle\/instantclient_21_3\/libclntsh.so/a ORACLE_HOME=\/opt\/oracle\/instantclient_21_3' dbaccess.ini
+    
+    # Remove chaves padrão inválidas para o contexto limpo do Oracle se geradas pelo utilitário
+    sed -i '/^TableSpace=/d' dbaccess.ini
+    sed -i '/^IndexSpace=/d' dbaccess.ini
+fi
+
+echo "🚀 Disparando o TOTVS dbAccess..."
 if [ -f "/opt/totvs/dbaccess/dbaccess64" ]; then
     exec /opt/totvs/dbaccess/dbaccess64
 else

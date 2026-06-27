@@ -11,5 +11,5 @@ COPY ./init-protheus.sh /opt/oracle/scripts/startup/01_setup-protheus.sh
 RUN chmod +x /opt/oracle/scripts/startup/01_setup-protheus.sh && \
     chown oracle:oinstall /opt/oracle/scripts/startup/01_setup-protheus.sh
 
-# BOA PRÁTICA: Devolve o controle para o usuário padrão da imagem para manter a segurança em runtime
+# Devolve o controle para o usuário padrão da imagem para manter a segurança em runtime
 USER oracle

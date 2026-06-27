@@ -75,7 +75,7 @@ totvs-protheus-modern-devops/
 │
 ├── dbaccess/               # Gateway de Dados (Preparado para OCI8 e ODBC)
 │   ├── Dockerfile
-│   └── entrypoint.sh       # Script ninja com geração via dbaccesscfg e sed
+│   └── entrypoint.sh       # Script ninja com geração via dbaccesscfg, EZConnect e sed
 │
 ├── protheus/               # Artefatos locais do ERP (Mapeamentos do Host)
 │   ├── apo/                # Repositório de Objetos compilados (RPOs)
@@ -83,9 +83,12 @@ totvs-protheus-modern-devops/
 │   └── systemload/         # Zips originais da Systemload (Dicionários / Help)
 │
 ├── .env                    # Variáveis de ambiente locais ativas
+├── .env.postgres           # Configurações especialistas PostgreSQL
+├── .env.mssql              # Configurações especialistas MS SQL Server
+├── .env.oracle             # Configurações especialistas Oracle 21c
 ├── .env.example            # Variáveis de ambiente globais modelo
-├── docker-compose.yml      # Orquestrador local por perfis
-├── run.sh                  # Orquestrador dinâmico de ambiente
+├── docker-compose.yml      # Orquestrador local parametrizado por perfis
+├── run.sh                  # Orquestrador dinâmico de ambiente e serviços
 └── README.md               # Documentação técnica viva
 ```
 
@@ -117,9 +120,9 @@ totvs-protheus-modern-devops/
   * [x] Tratamento dinâmico para espalhar os arquivos de menus diretamente na raiz do diretório `system`.
   * [x] Renderização dinâmica do arquivo `appserver.ini` em runtime na porta 1234, isolando as credenciais locais e respeitando o RPO Unificado (`tttm120.rpo`).
 
-* [ ] **Fase 4: Orquestração e CI/CD**
-  * [ ] Criação de imagens base via `Multi-Stage build` (redução drástica de tamanho).
-  * [ ] Divisão de perfis de execução adicionais (`Rest`, `WebAgent`).
+* [x] **Fase 4: Orquestração e CI/CD**
+  * [x] Divisão lógica de perfis de execução do AppServer por meio de `Docker Profiles` (`core`, `rest`, `telnet`).
+  * [x] Criação de barramento de sincronismo entre contêineres via arquivo semáforo oculto (`.protheus_db_ready`).
   * [ ] Automação de builds e testes automatizados via `GitHub Actions`.
 
 ---
@@ -200,18 +203,6 @@ Não há necessidade de editar manualmente as strings de conexão do `.env` ou s
 ./run.sh oracle
 ```
 
-* Para desligar o perfil ativo limpando volumes temporários:
-
-```bash
-./run.sh postgres down   # Ou mssql down / oracle down
-```
-
-* Wipe Total (Destruição segura e limpeza profunda de toda a infra):
-
-```bash
-./run.sh down
-```
-
 5. Monitorando Logs
 
 ```bash
@@ -221,6 +212,40 @@ docker logs protheus_license -f
 docker logs protheus_postgres -f # Se utilizar postgres
 docker logs protheus_mssql -f # Se utilizar mssql
 docker logs protheus_oracle -f # Se utilizar oracle
+```
+## 🌐 Inicialização de Serviços Especialistas (`REST` / `TELNET`)
+
+Para acoplar os serviços de microsserviços à estrutura do Core Master que já está ativa, passe o perfil do serviço como o segundo argumento do script:
+
+* Ativação da Rest API (AppServer dedicado `HTTP/REST`):
+```bash
+./run.sh mssql rest
+```
+
+* Ativação do Coletor de Dados Telnet (AppServer dedicado `SIGAACD`):
+```bash
+./run.sh mssql telnet
+```
+
+`Substitua mssql pelo banco ativo no seu ambiente.`
+
+⚠️ **Nota de Resiliência**: Os serviços especialistas possuem um semáforo interno. Eles aguardam em modo de espera e só liberam a inicialização de seus binários após o contêiner `protheus_core` concluir o deploy e criar o sinalizador `.protheus_db_ready` no volume.
+
+## 🔻 Desligamento e Limpeza
+
+* Para derrubar apenas um serviço especialista específico (ex: `REST`):
+```bash
+./run.sh mssql rest down
+```
+
+* Para desligar o ambiente ativo limpando os volumes de cache temporários:
+```bash
+./run.sh mssql down
+```
+
+* Wipe Total (Destruição segura e limpeza profunda de toda a infraestrutura global):
+```bash
+./run.sh down
 ```
 
 ## 💎 Diferenciais de Engenharia & Performance (O "Pulo do Gato")

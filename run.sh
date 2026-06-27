@@ -5,17 +5,14 @@
 # ==============================================================================
 set -e
 
-# Captura e converte para caixa baixa (ex: POSTGRES -> postgres)
-SGBD=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-export SGBD  # <-- CRUCIAL: Torna a variável visível para o processo do Docker Compose
-
+# Captura os argumentos
 SGBD=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 SERVICE=$(echo "$2" | tr '[:upper:]' '[:lower:]')
 COMMAND=$3
 
-export SGBD # <-- Adicione esta linha para expor a variável ao escopo do Docker Compose
+export SGBD  # <-- CRUCIAL: Torna a variável visível para o processo do Docker Compose
 
-# Caso o segundo argumento seja "down", inverte as variáveis para manter compatibilidade clássica (ex: ./run.sh postgres down)
+# Caso o segundo argumento seja "down", inverte as variáveis para manter compatibilidade clássica
 if [ "$SERVICE" = "down" ]; then
     COMMAND="down"
     SERVICE=""
@@ -41,9 +38,7 @@ if [ "$SGBD" = "down" ]; then
         ENV_ARG="--env-file .env"
     fi
 
-    # Redireciona o fluxo de stderr (2) para o null, matando os WARNs de parsing visual do terminal
     docker compose $ENV_ARG --profile "*" down -v 2>/dev/null
-    
     echo "✅ Ambiente totalmente limpo com segurança!"
     exit 0
 fi
@@ -55,10 +50,9 @@ if [ ! -f "$ENV_SPEC" ]; then
     exit 1
 fi
 
-# Monta a cadeia de perfis ativos de forma dinâmica (SGBD sempre ativo + Serviço opcional se existir)
+# Monta a cadeia de perfis ativos de forma dinâmica
 PROFILES_ARGS="--profile $SGBD"
 if [ -n "$SERVICE" ] && [ "$SERVICE" != "down" ]; then
-    # Valida se o serviço especialista solicitado é conhecido na topologia
     if [ "$SERVICE" != "rest" ] && [ "$SERVICE" != "telnet" ] && [ "$SERVICE" != "soap" ]; then
         echo "❌ Serviço especialista desconhecido: $SERVICE"
         echo "👉 Use: rest, telnet ou soap"
