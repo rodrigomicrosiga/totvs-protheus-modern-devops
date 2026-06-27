@@ -230,6 +230,31 @@ services:
     restart: always
     command: ["telnet"]
 
+  # ----------------------------------------------------------------------------
+  # APPLICATION TIER: AUTOMATED DEPLOY WORKER (Tarefa sob demanda de patch/build)
+  # ----------------------------------------------------------------------------
+  appserver_worker:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_worker
+    profiles:
+      - worker
+    networks:
+      - protheus_network
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DBACCESS_SERVER=protheus_core
+      - CORE_PORT_MULTI=${CORE_PORT_MULTI}
+    volumes:
+      - ./protheus/apo:/totvs/protheus/apo
+      - protheus_system:/totvs/protheus/system
+      - protheus_log:/totvs/protheus/log
+      - ./protheus/patches:/totvs/protheus/patches_queue
+    entrypoint: ["/totvs/protheus/bin/appserver/patch_deployer.sh"]
+    depends_on:
+      - appserver_core
+
 volumes:
   pg_data:
   mssql_data:

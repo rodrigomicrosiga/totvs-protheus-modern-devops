@@ -1,12 +1,33 @@
-FROM ubuntu:22.04
+# ==============================================================================
+# ESTÁGIO 1: Builder (Descarte de instaladores e lixo estrutural)
+# ==============================================================================
+FROM ubuntu:22.04 AS builder
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends tar && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp/build
+
+# Traz os binários do contexto local do Protheus
+COPY ./protheus/bin/appserver/appserver.tar.gz .
+COPY ./protheus/bin/smartclient/webapp.tar.gz .
+
+RUN mkdir -p appserver && \
+    tar -xzf appserver.tar.gz -C appserver/ && \
+    tar -xzf webapp.tar.gz -C appserver/
+
+# ==============================================================================
+# ESTÁGIO 2: Runner (Imagem Enxuta de Produção)
+# ==============================================================================
+FROM ubuntu:22.04 AS runner
+LABEL maintainer="Rodrigo dos Santos Brandão"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=pt_BR.UTF-8
 ENV LANGUAGE=pt_BR:pt
 ENV LC_ALL=pt_BR.UTF-8
+ENV PATH="/totvs/protheus/bin/appserver:${PATH}"
 
-# 1. Instala dependências nativas do AppServer Linux, utilitários, locales e suporte a DMI
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libc6 \
     libtinfo5 \
     libuuid1 \
@@ -17,22 +38,19 @@ RUN apt-get update && apt-get install -y \
     && echo "pt_BR.UTF-8 UTF-8" > /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Define o diretório de runtime do AppServer dentro do container
-WORKDIR /totvs/protheus/bin/appserver
+RUN mkdir -p /totvs/protheus/bin/appserver \
+             /totvs/protheus/apo \
+             /totvs/protheus/system \
+             /totvs/protheus/systemload \
+             /totvs/protheus/log \
+             /totvs/protheus/data
 
-# 3. Importa e extrai os binários estáticos diretamente da sua estrutura local
-COPY ./protheus/bin/appserver/appserver.tar.gz /tmp/
-RUN tar -xzf /tmp/appserver.tar.gz -C /totvs/protheus/bin/appserver/ && rm /tmp/appserver.tar.gz
-
-# 4. Importa, extrai e posiciona o WebApp (SmartClient HTML) no mesmo nível do binário
-COPY ./protheus/bin/smartclient/webapp.tar.gz /tmp/
-RUN tar -xzf /tmp/webapp.tar.gz -C /totvs/protheus/bin/appserver/ && rm /tmp/webapp.tar.gz
-
-# 5. Mapeia o entrypoint inteligente do ecossistema
+# Copia os binários mesclados do builder sem manter os .tar.gz nas camadas
+COPY --from=builder /tmp/build/appserver /totvs/protheus/bin/appserver/
 COPY ./appserver/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Porta do barramento TCP e WebApp configurada no .ini
-EXPOSE 1234
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+             /totvs/protheus/bin/appserver/appsrvlinux
 
+WORKDIR /totvs/protheus/bin/appserver
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
