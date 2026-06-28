@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Traduz o argumento do container em minúsculas (core, rest, telnet)
+# Traduz o argumento do container em minúsculas (core, rest, telnet, worker)
 ROLE=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 echo "=== [AppServer] Inicializando Modo Especialista: [${ROLE^^}] ==="
 
@@ -12,11 +12,15 @@ LICENSE_PORT=${LICENSE_SERVER_PORT:-5555}
 DB_PORT_INI=${DBACCESS_PORT:-7890}
 DB_SERVER_INI=${DBACCESS_SERVER:-protheus_dbaccess}
 
+# Garante o fallback do nome do RPO Customizado caso não esteja mapeado
+RPO_CUSTOM_TARGET="${RPO_CUSTOM_NAME:-custom}"
+
 # Tratamento exclusivo para o nome do log do ConsoleFile baseado no serviço
 case "$ROLE" in
     core)   LOG_NAME="appserver_core.log"   ;;
     rest)   LOG_NAME="appserver_rest.log"   ;;
     telnet) LOG_NAME="appserver_telnet.log" ;;
+    worker) LOG_NAME="appserver_worker.log" ;;
     *)      LOG_NAME="appserver.log"        ;;
 esac
 
@@ -26,11 +30,11 @@ while ! nc -z "$DB_SERVER_INI" "$DB_PORT_INI"; do sleep 1; done
 while ! nc -z "$LICENSE_HOST" "$LICENSE_PORT"; do sleep 1; done
 echo "✅ Conectividade com DbAccess e License Server estabelecida!"
 
-# 2. Carga Inicial Isolada com Injeção Segura de Travas (Fiel ao commit de ontem)
+# 2. Carga Inicial Isolada com Injeção Segura de Travas
 echo "📦 Verificando integridade dos volumes isolados..."
 
-# Garante a árvore mínima necessária dentro dos volumes do Docker
-mkdir -p /totvs/protheus/system /totvs/protheus/systemload /totvs/protheus/log /totvs/protheus/data
+# Garante a árvore mínima necessária dentro dos volumes do Docker, incluindo a fila de patches e o rollback do RPO
+mkdir -p /totvs/protheus/system /totvs/protheus/systemload /totvs/protheus/log /totvs/protheus/data /totvs/protheus/apo/aporollback /totvs/protheus/patches_queue
 
 # --- EXTRAÇÃO ISOLADA DO FISCAL.ZIP ---
 if [ ! -f "/totvs/protheus/system/.fiscal_boot_done" ]; then
@@ -65,7 +69,7 @@ fi
 
 # --- EXTRAÇÃO ISOLADA DO SYSTEMLOAD (DICIONARIOS, HELP, WEB) ---
 if [ ! -f "/totvs/protheus/systemload/.systemload_boot_done" ]; then
-    echo "📂 [First Boot] Extraindo dados de carga em /totvs/protheus/systemload/ (Aguarde)..."
+    echo "📂 [First Boot] Extraindo dados de carga in /totvs/protheus/systemload/ (Aguarde)..."
     touch /totvs/protheus/systemload/.systemload_boot_done
     
     [ -f "/tmp/source_systemload/dicionarios.zip" ] && unzip -nq /tmp/source_systemload/dicionarios.zip -d /totvs/protheus/systemload/
@@ -80,11 +84,11 @@ fi
 cd /totvs/protheus/bin/appserver
 echo "📝 Gerando appserver.ini dinâmico para o modo [${ROLE^^}]..."
 
-# Escrita limpa sem escape de variáveis locais
+# Escrita limpa sem escape de variáveis locais, mapeando dinamicamente o nome do RPO Customizado
 cat <<EOF > appserver.ini
 [${ENV_NAME}]
 SourcePath=/totvs/protheus/apo
-RPOCustom=/totvs/protheus/apo/custom.rpo
+RPOCustom=/totvs/protheus/apo/${RPO_CUSTOM_TARGET}.rpo
 RPOTLPP=/totvs/protheus/apo/tlpp.rpo
 RootPath=/totvs/protheus
 StartPath=/system/
@@ -131,8 +135,8 @@ EnvServer=${ENV_NAME}
 NonStopOnError=1
 EOF
 
-# Injeção cirúrgica de regras de governança exclusivas baseadas na ROLE
-if [ "$ROLE" = "core" ]; then
+# 🛡️ Injeção de Segurança e Governança Cirúrgica Baseada no Papel (Bloqueio Total vs. Permissão no Worker)
+if [ "$ROLE" = "worker" ]; then
     cat <<EOF >> appserver.ini
 
 [WebMonitor]
@@ -152,6 +156,7 @@ EnableBlockNewConnection=*
 EnableStopServer=*
 EOF
 else
+    # Bloqueio rigoroso de governança de patches/compilação nos ambientes Core, Rest e Telnet
     cat <<EOF >> appserver.ini
 
 [WebMonitor]
@@ -160,6 +165,15 @@ Enable=0
 [APP_MONITOR]
 Enable=0
 Gui=0
+
+[TDS]
+AllowMonitor=*
+AllowApplyPatch=0
+AllowEdit=0
+EnableDisconnectUser=0
+EnableSendMessage=0
+EnableBlockNewConnection=0
+EnableStopServer=0
 EOF
 fi
 
@@ -213,7 +227,7 @@ fi
 # 4. Inicialização do Binário Oficial com Verificação de Sanidade
 echo "🔍 Validando integridade física do executável TOTVS..."
 if [ ! -f "appsrvlinux" ]; then
-    echo "❌ ERRO CRÍTICO: O binário appsrvlinux NÃO foi encontrado no diretório atual (\$(pwd))!"
+    echo "❌ ERRO CRÍTICO: O binário appsrvlinux NÃO foi encontrado no diretório atual ($(pwd))!"
     echo "📂 Conteúdo atual da pasta bin/appserver:"
     ls -la
     exit 1
@@ -228,5 +242,21 @@ if [ "$ROLE" = "core" ]; then
     touch /totvs/protheus/system/.protheus_db_ready
 fi
 
-echo "🚀 Disparando TOTVS Application Server Linux..."
-exec ./appsrvlinux -console
+# ⚡ ORCHESTRATION ENGINE: Chaveamento de Processo Foreground vs Background baseado na ROLE
+if [ "$ROLE" = "worker" ]; then
+    echo "🚀 Preparando ambiente local do Worker..."
+    cd /totvs/protheus/bin/appserver
+    
+    if [ -f "/usr/local/bin/patch_deployer.sh" ]; then
+        echo "🤖 [Worker] Assumindo controle do contêiner em Foreground para execução síncrona..."
+        exec /usr/local/bin/patch_deployer.sh
+    else
+        echo "❌ ERRO CRÍTICO: O script /usr/local/bin/patch_deployer.sh não foi encontrado!"
+        exit 1
+    fi
+else
+    # Comportamento padrão inalterado para CORE, REST e TELNET
+    echo "🚀 Disparando TOTVS Application Server Linux no modo [${ROLE^^}]..."
+    cd /totvs/protheus/bin/appserver
+    exec ./appsrvlinux -console
+fi

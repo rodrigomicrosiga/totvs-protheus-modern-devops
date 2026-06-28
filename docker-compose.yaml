@@ -38,7 +38,7 @@ services:
       - DB_PASS=${DB_PASS}
       - POSTGRES_INITDB_ARGS=--data-checksums -c shared_buffers=512MB -c synchronous_commit=off
     ports:
-      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"  # <-- Porta Parametrizada
+      - "${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}"
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
@@ -57,7 +57,7 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
     ports:
-      - "${MSSQL_PORT:-1433}:${MSSQL_PORT:-1433}"  # <-- Porta Parametrizada
+      - "${MSSQL_PORT:-1433}:${MSSQL_PORT:-1433}"
     volumes:
       - mssql_data:/var/opt/mssql
     networks:
@@ -75,7 +75,7 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
     ports:
-      - "${ORACLE_PORT:-1521}:${ORACLE_PORT:-1521}"  # <-- Porta Parametrizada
+      - "${ORACLE_PORT:-1521}:${ORACLE_PORT:-1521}"
     volumes:
       - oracle_data:/opt/oracle/oradata
     networks:
@@ -86,10 +86,12 @@ services:
     build: ./dbaccess
     container_name: protheus_dbaccess
     networks:
-      - protheus_network
+      protheus_network:
+        aliases:
+          - protheus_dbaccess # <-- Garante que o contêiner seja encontrado por este nome exato na rede
     env_file:
       - .env
-      - .env.${SGBD}  # <-- Formato limpo e compatível com todas as versões do Compose
+      - .env.${SGBD}
     environment:
       - DB_TYPE=${DB_TYPE}
       - DB_SERVER=${DB_SERVER}
@@ -127,6 +129,7 @@ services:
       - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
       - APP_PORT_MULTI=${CORE_PORT_MULTI}
       - APP_MONITOR_PORT=${APP_MONITOR_PORT}
+      - CUSTOM_RPO_NAME=${CUSTOM_RPO_NAME:-custom}
     volumes:
       - ./protheus/apo:/totvs/protheus/apo
       - protheus_system:/totvs/protheus/system
@@ -176,6 +179,7 @@ services:
       - REST_PREP_ENV=${REST_PREP_ENV}
       - REST_INSTANCES=${REST_INSTANCES}
       - REST_URI=${REST_URI}
+      - CUSTOM_RPO_NAME=${CUSTOM_RPO_NAME:-custom}
     volumes:
       - ./protheus/apo:/totvs/protheus/apo
       - protheus_system:/totvs/protheus/system
@@ -214,6 +218,7 @@ services:
       - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
       - APP_PORT_MULTI=${TELNET_PORT_MULTI}
       - TELNET_PORT=${TELNET_PORT}
+      - CUSTOM_RPO_NAME=${CUSTOM_RPO_NAME:-custom}
     volumes:
       - ./protheus/apo:/totvs/protheus/apo
       - protheus_system:/totvs/protheus/system
@@ -231,7 +236,7 @@ services:
     command: ["telnet"]
 
   # ----------------------------------------------------------------------------
-  # APPLICATION TIER: AUTOMATED DEPLOY WORKER (Tarefa sob demanda de patch/build)
+  # APPLICATION TIER: AUTOMATED DEPLOY WORKER (MODO JOB CLI EFÊMERO)
   # ----------------------------------------------------------------------------
   appserver_worker:
     build:
@@ -244,17 +249,31 @@ services:
       - protheus_network
     environment:
       - ENV_NAME=${ENV_NAME}
-      - DBACCESS_SERVER=protheus_core
-      - CORE_PORT_MULTI=${CORE_PORT_MULTI}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - CUSTOM_RPO_NAME=${CUSTOM_RPO_NAME:-custom}
     volumes:
       - ./protheus/apo:/totvs/protheus/apo
       - protheus_system:/totvs/protheus/system
       - protheus_log:/totvs/protheus/log
       - ./protheus/patches:/totvs/protheus/patches_queue
-    entrypoint: ["/totvs/protheus/bin/appserver/patch_deployer.sh"]
-    depends_on:
-      - appserver_core
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: ["worker"]
 
+# ----------------------------------------------------------------------------
+# PERSISTENT DATA TIERS (Bloco Restaurado Definitivamente)
+# ----------------------------------------------------------------------------
 volumes:
   pg_data:
   mssql_data:

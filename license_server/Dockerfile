@@ -1,5 +1,5 @@
 # ==============================================================================
-# ESTÁGIO 1: Builder (Silent Deploy da Estrutura IzPack)
+# ESTÁGIO 1: Builder
 # ==============================================================================
 FROM ubuntu:22.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,13 +10,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN echo '#!/bin/bash\nexit 0' > /usr/local/bin/systemctl && chmod +x /usr/local/bin/systemctl
 
 WORKDIR /tmp/totvs_installer
-COPY ./license_server/license.tar.gz .
-RUN tar -xzf license.tar.gz && rm license.tar.gz && ./install 2
+COPY ./license.tar.gz .
+RUN tar -xzf license.tar.gz && rm license.tar.gz && chmod +x install && ./install 2
 
 # ==============================================================================
-# ESTÁGIO 2: Runner (Imagem Final de Autenticação)
+# ESTÁGIO 2: Runner
 # ==============================================================================
 FROM ubuntu:22.04 AS runner
+LABEL maintainer="Rodrigo dos Santos Brandão <rodrigomicrosiga>"
+LABEL version="3.7.1"
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=pt_BR.UTF-8
 ENV LANGUAGE=pt_BR:pt
@@ -28,11 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "pt_BR.UTF-8 UTF-8" > /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia apenas o resultado compilado e limpo da instalação
 COPY --from=builder /totvs/totvslicensevirtual /totvs/totvslicensevirtual
 
 WORKDIR /totvs/totvslicensevirtual
-COPY ./license_server/entrypoint.sh ./
+COPY ./entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 ENTRYPOINT ["./entrypoint.sh"]

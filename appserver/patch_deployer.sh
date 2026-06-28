@@ -1,42 +1,83 @@
 #!/bin/bash
 set -e
 
-echo "=== [Protheus-Worker] Iniciando Automação de Deploy de Patch ==="
-
-CORE_HOST=${DBACCESS_SERVER:-protheus_core}
-# Injeta dinamicamente a porta parametrizada no .env (com fallback para 1234 se estiver vazia)
-CORE_PORT=${CORE_PORT_MULTI:-1234} 
 PATCH_DIR="/totvs/protheus/patches_queue"
-ENVIRONMENT=${ENV_NAME}
+APO_DIR="/totvs/protheus/apo"
+ROLLBACK_DIR="/totvs/protheus/apo/aporollback"
+ENVIRONMENT="${ENV_NAME}"
 
-# 1. Aguarda o Core Master estar online e com o banco de dados pronto
-echo "⏳ Aguardando liberação do semáforo do Core Master..."
-while [ ! -f "/totvs/protheus/system/.protheus_db_ready" ]; do sleep 2; done
-while ! nc -z "$CORE_HOST" "$CORE_PORT"; do sleep 1; done
-echo "✅ Core Master pronto e responsivo na porta ${CORE_PORT} para atualizações!"
+echo "=== [Protheus-Worker] Inicializando Processamento de Patches em Modo CLI ==="
 
-# 2. Varre a pasta em busca de novos Patches (.ptm) para aplicação
-if [ -d "$PATCH_DIR" ] && [ "$(ls -A $PATCH_DIR/*.ptm 2>/dev/null)" ]; then
-    echo "📦 Encontrado(s) patch(es) na fila de deploy. Iniciando processamento..."
+# --- ETAPA A: NORMALIZAÇÃO DE EXTENSÕES ---
+if [ -d "$PATCH_DIR" ]; then
+    find "$PATCH_DIR" -maxdepth 1 -type f -iname "*.ptm" | while read -r file; do
+        ext="${file##*.}"
+        if [ "$ext" != "ptm" ]; then
+            echo "📝 [Normalizador] Ajustando extensão do arquivo: [$(basename "$file")] para minúsculo..."
+            mv "$file" "${file%.*}.ptm"
+        fi
+    done
+fi
+
+# --- ETAPA B: APLICAÇÃO EM LOTE ---
+if [ -d "$PATCH_DIR" ] && find "$PATCH_DIR" -maxdepth 1 -type f -name "*.ptm" | grep -q .; then
+    echo "📦 Encontrado(s) pacote(s) na fila de deploy. Iniciando processamento..."
     
     cd /totvs/protheus/bin/appserver
     
-    for patch_file in "$PATCH_DIR"/*.ptm; do
-        echo "⚙️ Aplicando patch: [$(basename "$patch_file")] no ambiente [$ENVIRONMENT]..."
+    find "$PATCH_DIR" -maxdepth 1 -type f -name "*.ptm" | sort | while read -r patch_file; do
+        PATCH_NAME=$(basename "$patch_file")
+        TARGET_RPO="tttm120.rpo"
+
+        # 🛡️ BACKUP PREVENTIVO DO RPO
+        if [ -f "${APO_DIR}/${TARGET_RPO}" ]; then
+            echo "💾 Fazendo backup de [${TARGET_RPO}] para o diretório de rollback..."
+            cp -p "${APO_DIR}/${TARGET_RPO}" "${ROLLBACK_DIR}/${TARGET_RPO}"
+            BACKUP_EXISTS="true"
+        else
+            echo "⚠️  Aviso: [${TARGET_RPO}] não foi encontrado para backup inicial."
+            BACKUP_EXISTS="false"
+        fi
+
+        echo "⚙️ Aplicando [${PATCH_NAME}] no ambiente [${ENVIRONMENT}]..."
+        TMP_LOG="/tmp/patch_exec.log"
         
-        # Executa o utilitário CLI oficial de forma silenciosa e imperativa
-        ./appsrvlinux -applypatch="$patch_file" -env="$ENVIRONMENT" -server="$CORE_HOST:$CORE_PORT" -silent || {
-            echo "❌ ERRO CRÍTICO ao aplicar o patch: [$(basename "$patch_file")]"
+        # EXECUÇÃO CLI OFICIAL NATIVA DO TDN
+        ./appsrvlinux -compile -applypatch -files="$patch_file" -env="$ENVIRONMENT" > "$TMP_LOG" 2>&1
+        cat "$TMP_LOG"
+
+        # ⚡ VALIDAÇÃO PRECISA: Valida o sucesso real baseado no report oficial da TOTVS
+        if grep -q "Patch successfully applied" "$TMP_LOG"; then
+            EXEC_SUCCESS="true"
+        else
+            EXEC_SUCCESS="false"
+        fi
+
+        if [ "$EXEC_SUCCESS" = "true" ]; then
+            echo "✅ Patch [${PATCH_NAME}] aplicado com sucesso total!"
+            mkdir -p "$PATCH_DIR/applied"
+            mv "$patch_file" "$PATCH_DIR/applied/"
+            
+            if [ "$BACKUP_EXISTS" = "true" ]; then
+                rm -f "${ROLLBACK_DIR}/${TARGET_RPO}"
+            fi
+        else
+            echo "❌ ERRO CRÍTICO detectado durante a aplicação de [${PATCH_NAME}]!"
+            if [ "$BACKUP_EXISTS" = "true" ]; then
+                echo "🔄 [ROLLBACK] Restaurando arquivo original [${TARGET_RPO}]..."
+                cp -p "${ROLLBACK_DIR}/${TARGET_RPO}" "${APO_DIR}/${TARGET_RPO}"
+                rm -f "${ROLLBACK_DIR}/${TARGET_RPO}"
+                echo "💥 Restauração executada com sucesso."
+            fi
+            mkdir -p "$PATCH_DIR/error"
+            mv "$patch_file" "$PATCH_DIR/error/"
             exit 1
-        }
-        
-        echo "✅ Patch [$(basename "$patch_file")] aplicado com sucesso total!"
-        # Move para uma pasta de backup/histórico interna para não reprocessar no próximo ciclo
-        mkdir -p "$PATCH_DIR/applied"
-        mv "$patch_file" "$PATCH_DIR/applied/"
+        fi
+        rm -f "$TMP_LOG"
     done
 else
-    echo "⏭️ Nenhuns patches pendentes (.ptm) encontrados na pasta de deploy. Pulando."
+    echo "⏭️  Nenhum patch encontrado na fila de deploy (*.ptm). Finalizando Job."
 fi
 
-echo "✅ [Protheus-Worker] Fluxo de deploy finalizado com sucesso!"
+echo "=== [Protheus-Worker] Trabalho finalizado com sucesso! ==="
+exit 0
