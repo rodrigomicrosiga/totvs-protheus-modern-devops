@@ -48,3 +48,9 @@ protheus/apo/custom.rpo
 # --- TOTVS Patches Deployment Queue ---
 protheus/patches/*
 !protheus/patches/.gitkeep
+
+# --- TOTVS Automated Migrator Outputs ---
+protheus/systemload/*.json
+protheus/systemload/*.txt
+protheus/systemload/*.jsondone
+protheus/systemload/.systemload_boot_done

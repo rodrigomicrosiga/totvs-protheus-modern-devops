@@ -270,6 +270,46 @@ services:
         soft: 65536
         hard: 65536
     command: ["worker"]
+  # ----------------------------------------------------------------------------
+  # APPLICATION TIER: AUTOMATED DICTIONARY MIGRATOR (UPDDISTR JOB)
+  # ----------------------------------------------------------------------------
+  appserver_upddistr:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_upddistr
+    profiles:
+      - upddistr
+    networks:
+      - protheus_network
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - RPO_CUSTOM_NAME=${RPO_CUSTOM_NAME:-custom}
+      # Parâmetros customizáveis para a carga do UPDDISTR
+      - UPD_USER=${UPD_USER:-admin}
+      - UPD_PASSWORD=${UPD_PASSWORD:-senha}
+      - UPD_SIMULACAO=${UPD_SIMULACAO:-false}
+      - UPD_EMPRESAS=${UPD_EMPRESAS:-"99"}
+    volumes:
+      - ./protheus/apo:/totvs/protheus/apo
+      - protheus_system:/totvs/protheus/system
+      - protheus_log:/totvs/protheus/log
+      - ./protheus/systemload:/totvs/protheus/systemload
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: ["upddistr"]
 
 # ----------------------------------------------------------------------------
 # PERSISTENT DATA TIERS (Bloco Restaurado Definitivamente)

@@ -22,8 +22,9 @@ graph TD
         WA[WebAgent / Cron Jobs]
     end
 
-    subgraph Automation ["Automated Deployment Task"]
+    subgraph Automation ["Automated Tasks Jobs"]
         WKR[AppServer Worker CLI Job]
+        UPD[AppServer UPDDISTR Engine Job]
     end
 
     subgraph Integration ["Camada de Conectividade"]
@@ -41,6 +42,7 @@ graph TD
     SC --> APP
     SC --> WR
     WKR -.->|Acesso Exclusivo Síncrono| APP
+    UPD -.->|Acesso Exclusivo Síncrono| APP
     APP --> DBA
     WR --> DBA
     WA --> DBA
@@ -60,7 +62,7 @@ totvs-protheus-modern-devops/
 │
 ├── appserver/              # Camada de Aplicação (Core & Especialistas)
 │   ├── Dockerfile
-│   ├── entrypoint.sh       # Script de boot inteligente e anti-loop
+│   ├── entrypoint.sh       # Script de boot inteligente, anti-loop e gerador de JSONs
 │   └── patch_deployer.sh   # Engine síncrona de aplicação e rollback de patches
 │
 ├── databases/              # Camada de Dados
@@ -88,14 +90,14 @@ totvs-protheus-modern-devops/
 │   │   └── aporollback/    # Backups efêmeros para rollback de contingência
 │   ├── patches/            # Fila local de deploys (*.ptm)
 │   ├── system/             # Zips originais da System (Fiscal / Menus)
-│   └── systemload/         # Zips originais da Systemload (Dicionários / Help)
+│   └── systemload/         # Zips de carga e diretório exclusivo do UPDDISTR
 │
-├── .env                    # Variáveis de ambiente locais ativas
+├── .env                    # Variáveis de ambiente locais ativas (Globais e UPD)
 ├── .env.postgres           # Configurações especialistas PostgreSQL
 ├── .env.mssql              # Configurações especialistas MS SQL Server
 ├── .env.oracle             # Configurações especialistas Oracle 21c
 ├── .env.example            # Variáveis de ambiente globais modelo
-├── .gitignore              # Proteção estrita contra vazamento de binários/RPOs
+├── .gitignore              # Proteção estrita contra vazamento de binários/RPOs/JSONs
 ├── docker-compose.yml      # Orquestrador local parametrizado por perfis
 ├── run.sh                  # Orquestrador dinâmico de ambiente e serviços
 └── README.md               # Documentação técnica viva
@@ -134,6 +136,7 @@ totvs-protheus-modern-devops/
   * [x] Engenharia de `Orquestração Síncrona de Deploy via Worker CLI Job`.
   * [x] Mecanismo automático de normalização de caixa alta/baixa para pacotes `.ptm`.
   * [x] Contingência de segurança com backup em tempo de execução e `Rollback Automatizado` baseado em assinaturas reais de logs da TOTVS.
+  * [x] Automação total de Compatibilização de Dicionários via `UPDDISTR Engine Job`.
   * [ ] Automação de builds e testes automatizados via `GitHub Actions`.
 
 ---
@@ -251,6 +254,26 @@ Ao disparar o comando:
 ```bash
 ./run.sh postgres worker
 ```
+
+## 🗃️ O Migrador Automatizado de Dicionários (`UPDDISTR JOB`)
+
+Para realizar migrações de dicionário e compatibilizações em lotes sem abrir assistentes visuais ou derrubar instâncias na mão, o projeto introduz a automação síncrona do `UPDDISTR`.
+
+Ao disparar o comando:
+
+```bash
+./run.sh postgres upddistr
+```
+
+**O Ciclo de Execução Inteligente**:
+
+1.**Isolamento de Segurança**: O orquestrador detecta a malha ativa e desliga temporariamente o `core`, `rest` e `telnet` para evitar concorrência com o banco e arquivos.
+
+2.**Injeção Dinâmica de Parâmetros**: O `entrypoint.sh` lê as credenciais de governança configuradas no `.env` e cospe um arquivo de lote `upddistr_param.json` na pasta systemload.
+
+3.**Execução em Foreground**: Uma instância especialista do AppServer é invocada em modo `ONSTART`, assumindo exclusivamente o controle do dicionário e a comunicação com o banco.
+
+4.**Restauração de Produção**: Ao detectar o arquivo de resultado, o script valida o sucesso, destrói o container temporário do migrador e religa automaticamente os nós que estavam online antes do início do job.
 
 **O Fluxo Automatizado de Ponta a Ponta:**
 
