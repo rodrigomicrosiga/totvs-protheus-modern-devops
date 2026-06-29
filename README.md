@@ -22,6 +22,10 @@ graph TD
         WA[WebAgent / Cron Jobs]
     end
 
+    subgraph Automation ["Automated Deployment Task"]
+        WKR[AppServer Worker CLI Job]
+    end
+
     subgraph Integration ["Camada de Conectividade"]
         DBA[TOTVS DbAccess Container]
         LIC[TOTVS License Server Virtual]
@@ -36,6 +40,7 @@ graph TD
 
     SC --> APP
     SC --> WR
+    WKR -.->|Acesso Exclusivo Síncrono| APP
     APP --> DBA
     WR --> DBA
     WA --> DBA
@@ -53,9 +58,10 @@ totvs-protheus-modern-devops/
 ├── .github/
 │   └── workflows/          # Futuro CI/CD
 │
-├── appserver/              # Camada de Aplicação
+├── appserver/              # Camada de Aplicação (Core & Especialistas)
 │   ├── Dockerfile
-│   └── entrypoint.sh       # Script de boot inteligente e anti-loop
+│   ├── entrypoint.sh       # Script de boot inteligente e anti-loop
+│   └── patch_deployer.sh   # Engine síncrona de aplicação e rollback de patches
 │
 ├── databases/              # Camada de Dados
 │   ├── postgres/
@@ -79,6 +85,8 @@ totvs-protheus-modern-devops/
 │
 ├── protheus/               # Artefatos locais do ERP (Mapeamentos do Host)
 │   ├── apo/                # Repositório de Objetos compilados (RPOs)
+│   │   └── aporollback/    # Backups efêmeros para rollback de contingência
+│   ├── patches/            # Fila local de deploys (*.ptm)
 │   ├── system/             # Zips originais da System (Fiscal / Menus)
 │   └── systemload/         # Zips originais da Systemload (Dicionários / Help)
 │
@@ -87,6 +95,7 @@ totvs-protheus-modern-devops/
 ├── .env.mssql              # Configurações especialistas MS SQL Server
 ├── .env.oracle             # Configurações especialistas Oracle 21c
 ├── .env.example            # Variáveis de ambiente globais modelo
+├── .gitignore              # Proteção estrita contra vazamento de binários/RPOs
 ├── docker-compose.yml      # Orquestrador local parametrizado por perfis
 ├── run.sh                  # Orquestrador dinâmico de ambiente e serviços
 └── README.md               # Documentação técnica viva
@@ -122,7 +131,9 @@ totvs-protheus-modern-devops/
 
 * [x] **Fase 4: Orquestração e CI/CD**
   * [x] Divisão lógica de perfis de execução do AppServer por meio de `Docker Profiles` (`core`, `rest`, `telnet`).
-  * [x] Criação de barramento de sincronismo entre contêineres via arquivo semáforo oculto (`.protheus_db_ready`).
+  * [x] Engenharia de `Orquestração Síncrona de Deploy via Worker CLI Job`.
+  * [x] Mecanismo automático de normalização de caixa alta/baixa para pacotes `.ptm`.
+  * [x] Contingência de segurança com backup em tempo de execução e `Rollback Automatizado` baseado em assinaturas reais de logs da TOTVS.
   * [ ] Automação de builds e testes automatizados via `GitHub Actions`.
 
 ---
@@ -230,6 +241,34 @@ Para acoplar os serviços de microsserviços à estrutura do Core Master que já
 `Substitua mssql pelo banco ativo no seu ambiente.`
 
 ⚠️ **Nota de Resiliência**: Os serviços especialistas possuem um semáforo interno. Eles aguardam em modo de espera e só liberam a inicialização de seus binários após o contêiner `protheus_core` concluir o deploy e criar o sinalizador `.protheus_db_ready` no volume.
+
+🤖 A Esteira de Deploy Automatizado (`WORKER CLI JOB`)
+
+O ambiente conta com um orquestrador síncrono dedicado a aplicar atualizações oficiais da TOTVS no repositório (`tttm120.rpo`) sem intervenção manual e com risco zero de concorrência.
+
+Ao disparar o comando:
+
+```bash
+./run.sh postgres worker
+```
+
+**O Fluxo Automatizado de Ponta a Ponta:**
+
+1. **Mapeamento de Estado**: O painel `./run.sh` verifica em runtime quais contêineres especialistas (`core`, `rest`, `telnet`) estão rodando no host.
+
+2. **Isolamento de I/O (Derrubada Controlada)**: Interrompe temporariamente os serviços ativos para liberar travas de leitura exclusivas sobre o arquivo do RPO.
+
+3. **Instanciação do Worker**: O Docker levanta um Job CLI efêmero que varre a pasta `./protheus/patches/`.
+
+4. **Normalização Automática**: Corrige pacotes nomeados incorretamente com extensões em caixa alta (`.PTM -> .ptm`).
+
+5. **Garantia de Rollback**: Realiza uma cópia física preventiva do RPO original para a pasta `aporollback/`.
+
+6. **Deploy Nativo Síncrono**: Invoca a CLI do executável (`./appsrvlinux -compile -applypatch -files=...`).
+
+7. **Validação por Assinatura de Log**: A engine lê a saída física do binário e só decreta o sucesso se encontrar a string `Patch successfully applied`. Se houver qualquer falha silenciosa, o RPO original é restaurado imediatamente do diretório de rollback.
+
+8. **Restauração do Ecossistema**: O Job encerra a si mesmo (`--rm`), e o `./run.sh` religa automaticamente no host exatamente os mesmos serviços que estavam ativos no início da operação.
 
 ## 🔻 Desligamento e Limpeza
 
