@@ -310,6 +310,40 @@ services:
         soft: 65536
         hard: 65536
     command: ["upddistr"]
+  # ----------------------------------------------------------------------------
+  # APPLICATION TIER: GITOPS ADVPL/TLPP CODE COMPILER LAYER
+  # ----------------------------------------------------------------------------
+  appserver_compiler:
+    build:
+      context: .
+      dockerfile: ./appserver/Dockerfile
+    container_name: protheus_compiler
+    profiles:
+      - compile
+    networks:
+      - protheus_network
+    environment:
+      - ENV_NAME=${ENV_NAME}
+      - DB_NAME=${DB_NAME}
+      - DB_TYPE=${DB_TYPE}
+      - DBACCESS_PORT=${DBACCESS_PORT}
+      - DBACCESS_SERVER=${DBACCESS_SERVER}
+      - LICENSE_SERVER=${LICENSE_SERVER}
+      - LICENSE_SERVER_PORT=${LICENSE_SERVER_PORT}
+      - RPO_CUSTOM_NAME=${RPO_CUSTOM_NAME:-custom}
+    volumes:
+      - ./protheus/apo:/totvs/protheus/apo
+      - protheus_system:/totvs/protheus/system
+      - protheus_log:/totvs/protheus/log
+    cap_add:
+      - SYS_RAWIO
+    devices:
+      - "/dev/mem:/dev/mem"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: ["compile"]
 
 # ----------------------------------------------------------------------------
 # PERSISTENT DATA TIERS (Bloco Restaurado Definitivamente)

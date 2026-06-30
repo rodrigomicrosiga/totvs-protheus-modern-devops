@@ -52,9 +52,11 @@ COPY --from=builder /tmp/build/appserver /totvs/protheus/bin/appserver/
 # Correção do caminho do script para o contexto local
 COPY ./appserver/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY ./appserver/patch_deployer.sh /usr/local/bin/patch_deployer.sh
+COPY ./appserver/code_compiler.sh /usr/local/bin/code_compiler.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \
              /usr/local/bin/patch_deployer.sh \
+             /usr/local/bin/code_compiler.sh \
              /totvs/protheus/bin/appserver/appsrvlinux
 
 WORKDIR /totvs/protheus/bin/appserver

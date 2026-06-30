@@ -20,10 +20,11 @@ fi
 
 # Valida se o comando base do banco foi passado de forma correta
 if [ -z "$SGBD" ] || { [ "$SGBD" != "postgres" ] && [ "$SGBD" != "mssql" ] && [ "$SGBD" != "oracle" ] && [ "$SGBD" != "down" ]; }; then
-    echo "❌ Uso correto: ./run.sh [postgres | mssql | oracle | down] [opcional: rest | telnet | soap | worker | upddistr] [opcional: command]"
+    echo "❌ Uso correto: ./run.sh [postgres | mssql | oracle | down] [opcional: rest | telnet | soap | worker | upddistr | compile] [opcional: command]"
     echo "👉 Exemplo Base:     ./run.sh postgres"
     echo "👉 Exemplo Worker:   ./run.sh postgres worker"
     echo "👉 Exemplo Migrador: ./run.sh postgres upddistr"
+    echo "👉 Exemplo Compiler: ./run.sh postgres compile"
     echo "👉 Exemplo Derrubar: ./run.sh postgres down"
     exit 1
 fi
@@ -54,9 +55,9 @@ fi
 # Monta a cadeia de perfis ativos de forma dinâmica
 PROFILES_ARGS="--profile $SGBD"
 if [ -n "$SERVICE" ] && [ "$SERVICE" != "down" ]; then
-    if [ "$SERVICE" != "rest" ] && [ "$SERVICE" != "telnet" ] && [ "$SERVICE" != "soap" ] && [ "$SERVICE" != "worker" ] && [ "$SERVICE" != "upddistr" ]; then
+    if [ "$SERVICE" != "rest" ] && [ "$SERVICE" != "telnet" ] && [ "$SERVICE" != "soap" ] && [ "$SERVICE" != "worker" ] && [ "$SERVICE" != "upddistr" ] && [ "$SERVICE" != "compile" ]; then
         echo "❌ Serviço especialista desconhecido: $SERVICE"
-        echo "👉 Use: rest, telnet, soap, worker ou upddistr"
+        echo "👉 Use: rest, telnet, soap, worker, upddistr ou compile"
         exit 1
     fi
     PROFILES_ARGS="$PROFILES_ARGS --profile $SERVICE"
@@ -77,9 +78,9 @@ if [ "$COMMAND" = "down" ]; then
     fi
 else
     # --------------------------------------------------------------------------
-    # CENÁRIO ESPECIAL: DEPLOYER WORKER E COMPATIBILIZADOR UPDDISTR
+    # CENÁRIO ESPECIAL: WORKER, UPDDISTR E COMPILER (ESTEIRA ELÁSTICA SÍNCRONA)
     # --------------------------------------------------------------------------
-    if [ "$SERVICE" = "worker" ] || [ "$SERVICE" = "upddistr" ]; then
+    if [ "$SERVICE" = "worker" ] || [ "$SERVICE" = "upddistr" ] || [ "$SERVICE" = "compile" ]; then
         echo "🕵️  Mapeando estado atual dos contêineres Protheus ativos..."
         
         CORE_ACTIVE=$(docker compose --env-file .env --env-file "$ENV_SPEC" ps --status running --format json | grep -q "appserver_core" && echo "true" || echo "false")
@@ -95,6 +96,12 @@ else
             echo "🚀 Invocando o Protheus Automated Deploy Worker (Modo CLI Job com Force Build)..."
             set +e
             docker compose --env-file .env --env-file "$ENV_SPEC" run --build --rm appserver_worker
+            EXEC_EXIT_CODE=$?
+            set -e
+        elif [ "$SERVICE" = "compile" ]; then
+            echo "🚀 Invocando a Esteira de Compilação Síncrona GitOps (Modo CLI)..."
+            set +e
+            docker compose --env-file .env --env-file "$ENV_SPEC" run --build --rm appserver_compiler
             EXEC_EXIT_CODE=$?
             set -e
         else

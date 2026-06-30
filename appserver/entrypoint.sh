@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Traduz o argumento do container em minúsculas (core, rest, telnet, worker, upddistr)
+# Traduz o argumento do container em minúsculas (core, rest, telnet, worker, upddistr, compile)
 ROLE=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 echo "=== [AppServer] Inicializando Modo Especialista: [${ROLE^^}] ==="
 
@@ -22,6 +22,7 @@ case "$ROLE" in
     telnet)   LOG_NAME="appserver_telnet.log"   ;;
     worker)   LOG_NAME="appserver_worker.log"   ;;
     upddistr) LOG_NAME="appserver_upddistr.log" ;;
+    compile)  LOG_NAME="appserver_compiler.log" ;;
     *)        LOG_NAME="appserver.log"          ;;
 esac
 
@@ -104,7 +105,7 @@ DBDatabase=${DB_TYPE}
 
 [Drivers]
 Active=TCP
-MultiProtocolPort=$( [ "$ROLE" = "upddistr" ] && echo "0" || echo "1" )
+MultiProtocolPort=$( [ "$ROLE" = "upddistr" ] || [ "$ROLE" = "compile" ] && echo "0" || echo "1" )
 MultiProtocolPortSecure=0
 
 [TCP]
@@ -116,7 +117,7 @@ Server=${LICENSE_HOST}
 Port=${LICENSE_PORT}
 
 [General]
-$( [ "$ROLE" = "upddistr" ] && echo ";app_environment=${ENV_NAME}" || echo "app_environment=${ENV_NAME}" )
+$( [ "$ROLE" = "upddistr" ] || [ "$ROLE" = "compile" ] && echo ";app_environment=${ENV_NAME}" || echo "app_environment=${ENV_NAME}" )
 ShowFullLog=0
 MaxStringSize=500
 MaxQuerySize=31960
@@ -134,7 +135,7 @@ NonStopOnError=1
 EOF
 
 # 🛡️ Injeção de Segurança e Governança Cirúrgica Baseada no Papel
-if [ "$ROLE" = "worker" ] || [ "$ROLE" = "upddistr" ]; then
+if [ "$ROLE" = "worker" ] || [ "$ROLE" = "upddistr" ] || [ "$ROLE" = "compile" ]; then
     cat <<EOF >> appserver.ini
 
 [WebMonitor]
@@ -258,6 +259,16 @@ if [ "$ROLE" = "worker" ]; then
         exec /usr/local/bin/patch_deployer.sh
     else
         echo "❌ ERRO CRÍTICO: O script /usr/local/bin/patch_deployer.sh não foi encontrado!"
+        exit 1
+    fi
+elif [ "$ROLE" = "compile" ]; then
+    echo "🚀 Preparando ambiente local do Compilador GitOps..."
+    cd /totvs/protheus/bin/appserver
+    if [ -f "/usr/local/bin/code_compiler.sh" ]; then
+        echo "🤖 [Compiler] Assumindo controle do contêiner em Foreground para compilação..."
+        exec /usr/local/bin/code_compiler.sh
+    else
+        echo "❌ ERRO CRÍTICO: O script /usr/local/bin/code_compiler.sh não foi encontrado!"
         exit 1
     fi
 elif [ "$ROLE" = "upddistr" ]; then

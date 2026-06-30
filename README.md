@@ -335,3 +335,27 @@ O binário do `AppServer` aborta a inicialização ou gera alertas graves quando
 ### 🚀 Tuning de Performance Extrema para Cargas ERP (PostgreSQL)
 Ambientes de desenvolvimento e testes do Protheus frequentemente sofrem lentidão extrema durante a execução de rotinas automáticas complexas (`ExecAuto`) ou importações massivas de dados. 
 * **Solução Aplicada:** Injetamos modificações agressivas de escrita no `postgresql.conf`, destacando o desmembramento de persistência via desativação do parâmetro `synchronous_commit = off`. O banco libera a linha de execução assim que o dado atinge a memória RAM, acelerando testes de cargas de desenvolvimento em até 5 vezes comparado ao modelo tradicional.
+
+---
+
+### 🗺️ O Fluxo Definitivo do GitOps com Analisador de Código
+
+
+```mermaid
+graph TD
+    subgraph Desenvolvedor ["Ambiente Local"]
+        DEV[Altera o código no VS Code] -->|Git Commit & Push| GITHUB[Abre Pull Request no GitHub]
+    end
+
+    subgraph Esteira ["GitHub Actions (Nuvem)"]
+        GITHUB -->|1. Gatilho| SONAR[TOTVS Code Analysis / SonarQube]
+        SONAR -->|2. Se houver falhas críticas| REJECT[PR Bloqueado automaticamente]
+        SONAR -->|3. Aprovado| BUILD[Levanta Malha de Build Efêmera]
+        BUILD -->|4. Docker CP| INJECT[Injeta fontes para dentro do Worker]
+        INJECT -->|5. Executa CLI| COMP[Compilador cria custom.rpo]
+    end
+
+    subgraph Deploy ["Servidor de Destino"]
+        COMP -->|6. Sucesso| SHIP[Dispara o RPO compilado para a Infra Ativa]
+    end
+```
