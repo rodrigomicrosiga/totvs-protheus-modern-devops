@@ -17,14 +17,15 @@ graph TD
     end
 
     subgraph Core ["Camada de Aplicação (Containers Isolados)"]
-        APP[AppServer Core]
+        APP[AppServer Core Master]
         WR[AppServer REST / WebServices]
         WA[WebAgent / Cron Jobs]
     end
 
-    subgraph Automation ["Automated Tasks Jobs"]
+    subgraph Automation ["Automated Tasks Jobs & GitOps Engine"]
         WKR[AppServer Worker CLI Job]
         UPD[AppServer UPDDISTR Engine Job]
+        SHR[GitHub Self-Hosted Runner Service]
     end
 
     subgraph Integration ["Camada de Conectividade"]
@@ -41,8 +42,9 @@ graph TD
 
     SC --> APP
     SC --> WR
-    WKR -.->|Acesso Exclusivo Síncrono| APP
-    UPD -.->|Acesso Exclusivo Síncrono| APP
+    WKR -.->|Interrupção e Acesso Síncrono| APP
+    UPD -.->|Interrupção e Acesso Síncrono| APP
+    SHR -.->|Orquestração GitOps Local| WKR
     APP --> DBA
     WR --> DBA
     WA --> DBA
@@ -58,49 +60,49 @@ graph TD
 totvs-protheus-modern-devops/
 │
 ├── .github/
-│   └── workflows/          # Futuro CI/CD
+│   └── workflows/          # Workflows futuros para deploy da infraestrutura base
 │
 ├── appserver/              # Camada de Aplicação (Core & Especialistas)
 │   ├── Dockerfile
 │   ├── entrypoint.sh       # Script de boot inteligente, anti-loop e gerador de JSONs
 │   └── patch_deployer.sh   # Engine síncrona de aplicação e rollback de patches
 │
-├── databases/              # Camada de Dados
+├── databases/              # Camada de Dados (Motores de Persistência)
 │   ├── postgres/
 │   │   ├── Dockerfile
 │   │   └── init-protheus.sh
 │   ├── sqlserver/
 │   │   ├── Dockerfile
 │   │   └── init-protheus.sql
-│   └── oracle/             # Nova Stack de Persistência Multitenant
+│   └── oracle/             # Stack de Persistência Multitenant Isolada
 │       ├── Dockerfile
-│       └── init-protheus.sh # Script de provisionamento local de PDB e Tablespace
+│       └── init-protheus.sh
 │
-├── license_server/         # Centralização de Licenças
+├── license_server/         # Centralização de Licenciamento com SYS_RAWIO
 │   ├── Dockerfile
 │   ├── entrypoint.sh
 │   └── license.tar.gz      # Instalador oficial IzPack da TOTVS
 │
 ├── dbaccess/               # Gateway de Dados (Preparado para OCI8 e ODBC)
 │   ├── Dockerfile
-│   └── entrypoint.sh       # Script ninja com geração via dbaccesscfg, EZConnect e sed
+│   └── entrypoint.sh       # Geração dinâmica via dbaccesscfg e encriptação de senhas
 │
-├── protheus/               # Artefatos locais do ERP (Mapeamentos do Host)
-│   ├── apo/                # Repositório de Objetos compilados (RPOs)
-│   │   └── aporollback/    # Backups efêmeros para rollback de contingência
-│   ├── patches/            # Fila local de deploys (*.ptm)
-│   ├── system/             # Zips originais da System (Fiscal / Menus)
-│   └── systemload/         # Zips de carga e diretório exclusivo do UPDDISTR
+├── protheus/               # Artefatos locais do ERP (Mapeamentos de Volumes do Host)
+│   ├── apo/                # Repositório de Objetos compilados (RPOs estáveis)
+│   │   └── aporollback/    # Backups efêmeros para rollback imediato de contingência
+│   ├── patches/            # Fila local de deploys e staging area do GitOps (*.ptm)
+│   ├── system/             # Zips originais da System (Fiscal / Menus / Dicionários Ativos)
+│   └── systemload/         # Zips de carga e diretório exclusivo de processamento do UPDDISTR
 │
-├── .env                    # Variáveis de ambiente locais ativas (Globais e UPD)
+├── .env                    # Variáveis de ambiente locais ativas (Globais e chaves de banco)
 ├── .env.postgres           # Configurações especialistas PostgreSQL
 ├── .env.mssql              # Configurações especialistas MS SQL Server
 ├── .env.oracle             # Configurações especialistas Oracle 21c
 ├── .env.example            # Variáveis de ambiente globais modelo
-├── .gitignore              # Proteção estrita contra vazamento de binários/RPOs/JSONs
-├── docker-compose.yml      # Orquestrador local parametrizado por perfis
-├── run.sh                  # Orquestrador dinâmico de ambiente e serviços
-└── README.md               # Documentação técnica viva
+├── .gitignore              # Proteção estrita contra vazamento de binários/RPOs/JSONs/Secrets
+├── docker-compose.yml      # Orquestrador local parametrizado por Docker Profiles
+├── run.sh                  # Painel e Máquina de Estado unificada do ambiente e GitOps
+└── README.md               # Documentação de arquitetura viva do ecossistema
 ```
 
 ---
@@ -130,24 +132,32 @@ totvs-protheus-modern-devops/
   * [x] Lógica de boot resiliente com extração inteligente e silenciosa (`-nq`) e travas anti-loop independentes por pacote (`.fiscal_boot_done`, `.menus_boot_done`).
   * [x] Tratamento dinâmico para espalhar os arquivos de menus diretamente na raiz do diretório `system`.
   * [x] Renderização dinâmica do arquivo `appserver.ini` em runtime na porta 1234, isolando as credenciais locais e respeitando o RPO Unificado (`tttm120.rpo`).
-
-* [x] **Fase 4: Orquestração e CI/CD**
   * [x] Divisão lógica de perfis de execução do AppServer por meio de `Docker Profiles` (`core`, `rest`, `telnet`).
+
+* [x] **Fase 4: Automação e Jobs Síncronos**
   * [x] Engenharia de `Orquestração Síncrona de Deploy via Worker CLI Job`.
-  * [x] Mecanismo automático de normalização de caixa alta/baixa para pacotes `.ptm`.
   * [x] Contingência de segurança com backup em tempo de execução e `Rollback Automatizado` baseado em assinaturas reais de logs da TOTVS.
   * [x] Automação total de Compatibilização de Dicionários via `UPDDISTR Engine Job`.
-  * [ ] Automação de builds e testes automatizados via `GitHub Actions`.
+
+* [x] Fase 5: Arquitetura GitOps & Continuous Delivery (CD)
+  * [x] Desacoplamento total entre o repositório de Fontes (`advpl-source-modern-devops`) e a Infraestrutura.
+  * [x] Implementação do `Self-Hosted Runner` operando como serviço nativo `systemd` no host, escutando a esteira pública do GitHub.
+  * [x] Integração de gatilhos automáticos com o `SonarQube` na nuvem pública para validação de regras estritas (`Quality Gates`).
+  * [x] Mecanismo de feedback automatizado via `github-script` inserindo o resultado da compilação e logs de erro diretamente como comentários no `Pull Request` do desenvolvedor.
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-* `Docker & Docker Compose` (Isolamento e orquestração)
+* `Docker & Docker Compose` (Isolamento, volumes nomeados e orquestração por perfis)
 
-* `PostgreSQL 16+ / MS SQL Server 2022 / Oracle 21c EE` (Motores de banco de dados suportados)
+* `GitHub Actions & Self-Hosted Runner` (Motor do GitOps e integrador contínuo de RPO)
 
-* `Shell Script / T-SQL` (Automação de inicialização estruturada)
+* `SonarQube` (Validador estático de boas práticas de desenvolvimento)
+
+* `PostgreSQL 16+ / MS SQL Server 2022 / Oracle 21c EE` (Motores de persistência)
+
+* `Shell Script / T-SQL` (Automação inteligente e geradores imperativos de arquivos `.ini`)
 
 ---
 
@@ -245,14 +255,34 @@ Para acoplar os serviços de microsserviços à estrutura do Core Master que já
 
 ⚠️ **Nota de Resiliência**: Os serviços especialistas possuem um semáforo interno. Eles aguardam em modo de espera e só liberam a inicialização de seus binários após o contêiner `protheus_core` concluir o deploy e criar o sinalizador `.protheus_db_ready` no volume.
 
-🤖 A Esteira de Deploy Automatizado (`WORKER CLI JOB`)
+### 🤖 A Esteira de `GitOps` & Mecanismos Automáticos (Fase 5)
 
-O ambiente conta com um orquestrador síncrono dedicado a aplicar atualizações oficiais da TOTVS no repositório (`tttm120.rpo`) sem intervenção manual e com risco zero de concorrência.
+Este ecossistema opera de forma integrada à esteira de desenvolvimento do repositório `advpl-source-modern-devops`. A infraestrutura local está blindada contra intervenções manuais. O fluxo completo de `Continuous Delivery` (CD) funciona sob o seguinte modelo:
 
-Ao disparar o comando:
+```mermaid
+graph TD
+    subgraph Desenvolvedor ["Ambiente de Desenvolvimento"]
+        DEV[Altera o código local no VS Code] -->|Git Push| GITHUB[Abre Pull Request no GitHub]
+    end
 
-```bash
-./run.sh postgres worker
+    subgraph Esteira ["GitHub Actions (Nuvem Pública)"]
+        GITHUB -->|1. Trigger| SONAR[TOTVS AppAnalyzer Scan]
+        SONAR -->|2. Falha de Regras| REJECT[Trava o PR com Selo Vermelho]
+        SONAR -->|3. Clean Code Aprovado| GH_RUNNER[Delega Build para o Servidor Local]
+    end
+
+    subgraph Servidor ["Infraestrutura Local (Host Host)"]
+        GH_RUNNER -->|4. Aciona Serviço| SH_RUNNER[Self-Hosted Runner Systemd]
+        SH_RUNNER -->|5. Executa Comando| RUN_SH[./run.sh postgres compile]
+        RUN_SH -->|6. Invoca| WORKER[Worker CLI Job Container]
+        WORKER -->|7. Isola I/O e Compila| RPO[Custom RPO Engine]
+        RPO -->|8. Resultado da CLI| RUN_SH
+        RUN_SH -->|9. Callback de Status| GH_RUNNER
+    end
+
+    subgraph Feedback ["Ciclo de Encerramento"]
+        GH_RUNNER -->|10. Insere Comentário Automático| GITHUB
+    end
 ```
 
 ## 🗃️ O Migrador Automatizado de Dicionários (`UPDDISTR JOB`)
@@ -265,33 +295,23 @@ Ao disparar o comando:
 ./run.sh postgres upddistr
 ```
 
-**O Ciclo de Execução Inteligente**:
+### ⚙️ A Máquina de Estado de Compilação (`./run.sh postgres compile`)
 
-1.**Isolamento de Segurança**: O orquestrador detecta a malha ativa e desliga temporariamente o `core`, `rest` e `telnet` para evitar concorrência com o banco e arquivos.
+Quando o `Self-Hosted Runner` instalado localmente no servidor recebe a aprovação do `GitHub Actions`, ele dispara internamente o orquestrador de compilação da nossa infraestrutura. O processo segue este ciclo imperativo:
 
-2.**Injeção Dinâmica de Parâmetros**: O `entrypoint.sh` lê as credenciais de governança configuradas no `.env` e cospe um arquivo de lote `upddistr_param.json` na pasta systemload.
-
-3.**Execução em Foreground**: Uma instância especialista do AppServer é invocada em modo `ONSTART`, assumindo exclusivamente o controle do dicionário e a comunicação com o banco.
-
-4.**Restauração de Produção**: Ao detectar o arquivo de resultado, o script valida o sucesso, destrói o container temporário do migrador e religa automaticamente os nós que estavam online antes do início do job.
-
-**O Fluxo Automatizado de Ponta a Ponta:**
-
-1. **Mapeamento de Estado**: O painel `./run.sh` verifica em runtime quais contêineres especialistas (`core`, `rest`, `telnet`) estão rodando no host.
+1. **Mapeamento de Estado**: O script identifica quais contêineres especialistas (`core`, `rest`, `telnet`) estão rodando no host.
 
 2. **Isolamento de I/O (Derrubada Controlada)**: Interrompe temporariamente os serviços ativos para liberar travas de leitura exclusivas sobre o arquivo do RPO.
 
-3. **Instanciação do Worker**: O Docker levanta um Job CLI efêmero que varre a pasta `./protheus/patches/`.
+3. **Instanciação do Worker**: O `Docker` levanta um Job CLI temporário que herda os fontes novos do `Pull Request` descarregados na pasta `/tmp/compile_staging`.
 
-4. **Normalização Automática**: Corrige pacotes nomeados incorretamente com extensões em caixa alta (`.PTM -> .ptm`).
+4. **Garantia de Rollback**: Realiza uma cópia física preventiva do RPO original para a pasta `aporollback/`.
 
-5. **Garantia de Rollback**: Realiza uma cópia física preventiva do RPO original para a pasta `aporollback/`.
+5. **Deploy Síncrono Nativo**: Invoca a CLI do executável (`./appsrvlinux -compile -applypatch -files=...`).
 
-6. **Deploy Nativo Síncrono**: Invoca a CLI do executável (`./appsrvlinux -compile -applypatch -files=...`).
+6. **Validação por Assinatura de Log**: A engine lê a saída física do binário e só decreta o sucesso se encontrar a string `Patch successfully applied`. Se houver qualquer falha silenciosa, o RPO original é restaurado imediatamente do diretório de rollback.
 
-7. **Validação por Assinatura de Log**: A engine lê a saída física do binário e só decreta o sucesso se encontrar a string `Patch successfully applied`. Se houver qualquer falha silenciosa, o RPO original é restaurado imediatamente do diretório de rollback.
-
-8. **Restauração do Ecossistema**: O Job encerra a si mesmo (`--rm`), e o `./run.sh` religa automaticamente no host exatamente os mesmos serviços que estavam ativos no início da operação.
+7. **Reerguimento da Malha**: O Job encerra a si mesmo (`--rm`), e o `./run.sh` religa automaticamente no host exatamente os mesmos serviços que estavam ativos no início da operação.
 
 ## 🔻 Desligamento e Limpeza
 
@@ -335,27 +355,3 @@ O binário do `AppServer` aborta a inicialização ou gera alertas graves quando
 ### 🚀 Tuning de Performance Extrema para Cargas ERP (PostgreSQL)
 Ambientes de desenvolvimento e testes do Protheus frequentemente sofrem lentidão extrema durante a execução de rotinas automáticas complexas (`ExecAuto`) ou importações massivas de dados. 
 * **Solução Aplicada:** Injetamos modificações agressivas de escrita no `postgresql.conf`, destacando o desmembramento de persistência via desativação do parâmetro `synchronous_commit = off`. O banco libera a linha de execução assim que o dado atinge a memória RAM, acelerando testes de cargas de desenvolvimento em até 5 vezes comparado ao modelo tradicional.
-
----
-
-### 🗺️ O Fluxo Definitivo do GitOps com Analisador de Código
-
-
-```mermaid
-graph TD
-    subgraph Desenvolvedor ["Ambiente Local"]
-        DEV[Altera o código no VS Code] -->|Git Commit & Push| GITHUB[Abre Pull Request no GitHub]
-    end
-
-    subgraph Esteira ["GitHub Actions (Nuvem)"]
-        GITHUB -->|1. Gatilho| SONAR[TOTVS Code Analysis / SonarQube]
-        SONAR -->|2. Se houver falhas críticas| REJECT[PR Bloqueado automaticamente]
-        SONAR -->|3. Aprovado| BUILD[Levanta Malha de Build Efêmera]
-        BUILD -->|4. Docker CP| INJECT[Injeta fontes para dentro do Worker]
-        INJECT -->|5. Executa CLI| COMP[Compilador cria custom.rpo]
-    end
-
-    subgraph Deploy ["Servidor de Destino"]
-        COMP -->|6. Sucesso| SHIP[Dispara o RPO compilado para a Infra Ativa]
-    end
-```
