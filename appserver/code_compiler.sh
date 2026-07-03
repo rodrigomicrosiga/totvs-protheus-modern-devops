@@ -1,78 +1,127 @@
 #!/bin/bash
 set -e
 
-# Alinhado dinamicamente com o volume do docker-compose
+# Definições de caminhos internos do container
 STAGING_DIR="/totvs/protheus/patches_queue"
 APO_DIR="/totvs/protheus/apo"
 ROLLBACK_DIR="/totvs/protheus/apo/aporollback"
 ENVIRONMENT="${ENV_NAME}"
 CUSTOM_RPO="${RPO_CUSTOM_NAME:-custom}.rpo"
-LIST_FILE="/tmp/fontes_compilacao.txt"
-TMP_LOG="/tmp/compile_exec.log"
 
-echo "=== [Protheus-Compiler] Inicializando Esteira de Compilação GitOps ==="
+# Definições baseadas na especificação oficial de lote
+LIST_FILE="/tmp/fontes_compilacao.lst"
+OUTREPORT_DIR="/tmp/outreport/"
+FILE_ERROR="${OUTREPORT_DIR}compile_errors.log"
+FILE_SUCCESS="${OUTREPORT_DIR}compile_success.log"
 
-# 1. Valida se existem fontes injetados pelo robô no diretório de staging
+# Estrutura de Includes Permanente
+INCLUDES_ADVPL="/totvs/protheus/includes/advpl"
+INCLUDES_TLPP="/totvs/protheus/includes/tlpp"
+INCLUDES_CUSTOM="/totvs/protheus/includes/custom"
+
+echo "=== [Protheus-Compiler] Inicializando Esteira de Compilação GitOps (.LST) ==="
+
+# 📦 [DYNAMIC UNZIP] Verifica e descompacta os pacotes de includes se existirem
+echo "📦 Checando presença de pacotes de includes compactados..."
+
+if [ -f "${INCLUDES_ADVPL}/includes.zip" ]; then
+    echo "📂 Descompactando includes ADVPL nativas..."
+    unzip -oq "${INCLUDES_ADVPL}/includes.zip" -d "$INCLUDES_ADVPL"
+fi
+
+if [ -f "${INCLUDES_TLPP}/includes.zip" ]; then
+    echo "📂 Descompactando includes TLPP nativas..."
+    unzip -oq "${INCLUDES_TLPP}/includes.zip" -d "$INCLUDES_TLPP"
+fi
+
+if [ -f "${INCLUDES_CUSTOM}/includes.zip" ]; then
+    echo "📂 Descompactando includes Customizadas..."
+    unzip -oq "${INCLUDES_CUSTOM}/includes.zip" -d "$INCLUDES_CUSTOM"
+fi
+
+# Concatena as três variáveis usando o separador oficial ';' exigido pela TOTVS
+INCLUDE_PATHS="${INCLUDES_ADVPL};${INCLUDES_TLPP};${INCLUDES_CUSTOM}"
+
+# 1. Valida e monta o arquivo .lst em formato de linha única com separador ';'
 if [ -d "$STAGING_DIR" ]; then
-    echo "🔍 Varrendo diretório de staging de customizados..."
-    find "$STAGING_DIR" -type f \( -name "*.prw" -o -name "*.tlpp" \) > "$LIST_FILE"
+    echo "🔍 Varrendo diretório de staging para gerar lote .lst..."
     
-    TOTAL_FILES=$(wc -l < "$LIST_FILE")
-    if [ "$TOTAL_FILES" -eq 0 ]; then
-        echo "❌ ERRO CRÍTICO: Nenhum arquivo .prw ou .tlpp localizado no staging para compilação!"
-        rm -f "$LIST_FILE"
+    FONTES=$(find "$STAGING_DIR" -type f \( -name "*.prw" -o -name "*.tlpp" \) | tr '\n' ';')
+    
+    if [ -z "$FONTES" ]; then
+        echo "❌ ERRO CRÍTICO: Nenhum arquivo .prw ou .tlpp localizado no staging!"
         exit 1
     fi
-    echo "🎯 Foram identificados [${TOTAL_FILES}] fontes modificados no PR para compilação."
+    
+    echo "$FONTES" > "$LIST_FILE"
+    
+    echo "📝 Conteúdo do arquivo .lst estruturado para a TOTVS:"
+    cat "$LIST_FILE"
+    echo ""
 else
-    echo "❌ ERRO CRÍTICO: O diretório de staging ${STAGING_DIR} não foi localizado!"
+    echo "❌ ERRO CRÍTICO: Diretório de staging não localizado!"
     exit 1
 fi
 
-# 2. Backup preventivo do RPO customizado atual
+# 2. Prepara os diretórios de saída do relatório e backup preventivo
+mkdir -p "$OUTREPORT_DIR"
 if [ -f "${APO_DIR}/${CUSTOM_RPO}" ]; then
-    echo "💾 [Segurança] Gerando backup preventivo do repositório customizado [${CUSTOM_RPO}]..."
+    echo "💾 [Segurança] Gerando backup preventivo do RPO [${CUSTOM_RPO}]..."
     mkdir -p "$ROLLBACK_DIR"
     cp -p "${APO_DIR}/${CUSTOM_RPO}" "${ROLLBACK_DIR}/${CUSTOM_RPO}"
     BACKUP_EXISTS="true"
 else
-    echo "⚠️  Aviso: Repositório [${CUSTOM_RPO}] não existe. Um novo RPO Customizado será gerado do zero."
     BACKUP_EXISTS="false"
 fi
 
-# 3. Executa a compilação via CLI oficial da TOTVS
+# 3. Executa a compilação utilizando a nova sintaxe estrita da CLI
 cd /totvs/protheus/bin/appserver
-echo "⚙️  Invocando compilador nativo da TOTVS para o ambiente [${ENVIRONMENT}]..."
+echo "⚙️  Invocando appsrvlinux com os parâmetros -files, -includes e -outreport..."
+echo "📂 Mapeamento de Includes: ${INCLUDE_PATHS}"
 
+ERROR=0
 set +e
-./appsrvlinux -compile -list="$LIST_FILE" -env="$ENVIRONMENT" > "$TMP_LOG" 2>&1
-EXEC_EXIT_CODE=$?
+./appsrvlinux -compile -env="$ENVIRONMENT" -files="$LIST_FILE" -includes="$INCLUDE_PATHS" -outreport="$OUTREPORT_DIR"
+ERROR=$?
 set -e
 
-# Descarrega o log completo no terminal para o GitHub Actions capturar
-cat "$TMP_LOG"
+# 4. Auditoria e validação pós-compilação com base no Outreport
+echo "📊 Analisando relatórios de saída do compilador..."
 
-# 4. Validação rigorosa por assinatura textual de erro do ADVPL/TLPP
-if grep -qi "error" "$TMP_LOG" || grep -qi "syntax error" "$TMP_LOG" || [ $EXEC_EXIT_CODE -ne 0 ]; then
-    echo "❌ FALHA CRÍTICA: Detectado erro de sintaxe ou compilação no código enviado!"
+if [ $ERROR -ne 0 ] || { [ -f "${FILE_ERROR}" ] && [ -s "${FILE_ERROR}" ]; }; then
+    echo "❌ FALHA CRÍTICA: Detectados erros de compilação ou sintaxe nos fontes!"
     
-    if [ "$BACKUP_EXISTS" = "true" ]; then
-        echo "🔄 [ROLLBACK] Restaurando versão estável anterior do RPO [${CUSTOM_RPO}]..."
-        cp -p "${ROLLBACK_DIR}/${CUSTOM_RPO}" "${APO_DIR}/${CUSTOM_RPO}"
-        rm -f "${ROLLBACK_DIR}/${CUSTOM_RPO}"
-        echo "✅ Repositório customizado restaurado com sucesso."
+    if [ -f "${FILE_ERROR}" ]; then
+        echo "📝 --- LOG DE ERROS DA TOTVS ---"
+        cat "${FILE_ERROR}"
+        echo "--------------------------------"
     fi
     
-    rm -f "$LIST_FILE" "$TMP_LOG"
-    exit 1 # Sinaliza falha real para derrubar a esteira
-else
-    echo "✅ SUCESSO TOTAL: Todos os fontes customizados foram integrados com sucesso ao RPO!"
     if [ "$BACKUP_EXISTS" = "true" ]; then
-        echo "🧹 [Limpeza] Removendo backup de contingência temporário..."
+        echo "🔄 [ROLLBACK] Restaurando versão estável anterior do RPO..."
+        cp -p "${ROLLBACK_DIR}/${CUSTOM_RPO}" "${APO_DIR}/${CUSTOM_RPO}"
+        rm -f "${ROLLBACK_DIR}/${CUSTOM_RPO}"
+    fi
+    
+    rm -f "$LIST_FILE"
+    rm -rf "$OUTREPORT_DIR"
+    exit 1
+else
+    echo "***************************************************"
+    echo "* ✅ SUCESSO TOTAL: RPO compilado com sucesso!   *"
+    echo "***************************************************"
+    
+    if [ -f "${FILE_SUCCESS}" ]; then
+        echo "📝 Fontes integrados:"
+        cat "${FILE_SUCCESS}"
+    fi
+    
+    if [ "$BACKUP_EXISTS" = "true" ]; then
         rm -f "${ROLLBACK_DIR}/${CUSTOM_RPO}"
     fi
 fi
 
-rm -f "$LIST_FILE" "$TMP_LOG"
-echo "=== [Protheus-Compiler] Compilação finalizada com sucesso! ==="
+rm -f "$LIST_FILE"
+rm -rf "$OUTREPORT_DIR"
+echo "=== [Protheus-Compiler] Processo GitOps Encerrado ==="
 exit 0

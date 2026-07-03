@@ -336,6 +336,10 @@ services:
       - protheus_system:/totvs/protheus/system
       - protheus_log:/totvs/protheus/log
       - ./protheus/patches:/totvs/protheus/patches_queue # <-- MAPEADO PARA A FILA DE ENTRADA
+      # 🔥 ADICIONE OS DIRETÓRIOS DE INCLUDES PERMANENTES AQUI:
+      - ./protheus/includes/advpl:/totvs/protheus/includes/advpl
+      - ./protheus/includes/tlpp:/totvs/protheus/includes/tlpp
+      - ./protheus/includes/custom:/totvs/protheus/includes/custom
     cap_add:
       - SYS_RAWIO
     devices:
