@@ -163,6 +163,11 @@ else
         [ "$REST_ACTIVE" = "true" ] && docker compose --env-file .env --env-file "$ENV_SPEC" up -d appserver_rest
         [ "$TELNET_ACTIVE" = "true" ] && docker compose --env-file .env --env-file "$ENV_SPEC" up -d appserver_telnet
 
+        # PULO DO GATO: Se o processo falhou, o run.sh precisa sair com erro AGORA para o GitHub capturar a falha!
+        if [ $EXEC_EXIT_CODE -ne 0 ]; then
+            exit 1
+        fi
+
     # OUTROS SERVIÇOS ESPECIALISTAS TRADICIONAIS (REST, TELNET, SOAP)
     elif [ -n "$SERVICE" ] && [ "$SERVICE" != "down" ]; then
         echo "🚀 Acoplando o serviço especialista [${SERVICE^^}] de forma isolada..."

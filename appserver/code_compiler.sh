@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Diretório interno temporário onde o GitHub Actions vai injetar os fontes enviados via Pull Request
-STAGING_DIR="/tmp/compile_staging"
+# Alinhado dinamicamente com o volume do docker-compose
+STAGING_DIR="/totvs/protheus/patches_queue"
 APO_DIR="/totvs/protheus/apo"
 ROLLBACK_DIR="/totvs/protheus/apo/aporollback"
 ENVIRONMENT="${ENV_NAME}"
@@ -19,13 +19,13 @@ if [ -d "$STAGING_DIR" ]; then
     
     TOTAL_FILES=$(wc -l < "$LIST_FILE")
     if [ "$TOTAL_FILES" -eq 0 ]; then
-        echo "⏭️  Nenhum arquivo .prw ou .tlpp localizado no staging. Abortando build."
+        echo "❌ ERRO CRÍTICO: Nenhum arquivo .prw ou .tlpp localizado no staging para compilação!"
         rm -f "$LIST_FILE"
         exit 1
     fi
     echo "🎯 Foram identificados [${TOTAL_FILES}] fontes modificados no PR para compilação."
 else
-    echo "❌ ERRO CRÍTICO: O diretório de staging ${STAGING_DIR} não foi populado pela esteira!"
+    echo "❌ ERRO CRÍTICO: O diretório de staging ${STAGING_DIR} não foi localizado!"
     exit 1
 fi
 
@@ -45,12 +45,11 @@ cd /totvs/protheus/bin/appserver
 echo "⚙️  Invocando compilador nativo da TOTVS para o ambiente [${ENVIRONMENT}]..."
 
 set +e
-# Invoca o binário passando o arquivo de lote texto gerado dinamicamente
 ./appsrvlinux -compile -list="$LIST_FILE" -env="$ENVIRONMENT" > "$TMP_LOG" 2>&1
 EXEC_EXIT_CODE=$?
 set -e
 
-# Descarrega o log completo no terminal para o GitHub Actions capturar e expor no log do PR
+# Descarrega o log completo no terminal para o GitHub Actions capturar
 cat "$TMP_LOG"
 
 # 4. Validação rigorosa por assinatura textual de erro do ADVPL/TLPP
@@ -65,7 +64,7 @@ if grep -qi "error" "$TMP_LOG" || grep -qi "syntax error" "$TMP_LOG" || [ $EXEC_
     fi
     
     rm -f "$LIST_FILE" "$TMP_LOG"
-    exit 1 # Sinaliza falha para travar a esteira do GitHub Actions
+    exit 1 # Sinaliza falha real para derrubar a esteira
 else
     echo "✅ SUCESSO TOTAL: Todos os fontes customizados foram integrados com sucesso ao RPO!"
     if [ "$BACKUP_EXISTS" = "true" ]; then
@@ -74,7 +73,6 @@ else
     fi
 fi
 
-# Limpeza de arquivos temporários de controle
 rm -f "$LIST_FILE" "$TMP_LOG"
 echo "=== [Protheus-Compiler] Compilação finalizada com sucesso! ==="
 exit 0

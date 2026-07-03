@@ -335,6 +335,7 @@ services:
       - ./protheus/apo:/totvs/protheus/apo
       - protheus_system:/totvs/protheus/system
       - protheus_log:/totvs/protheus/log
+      - ./protheus/patches:/totvs/protheus/patches_queue # <-- MAPEADO PARA A FILA DE ENTRADA
     cap_add:
       - SYS_RAWIO
     devices:
