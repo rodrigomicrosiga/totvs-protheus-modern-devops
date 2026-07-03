@@ -92,7 +92,14 @@ totvs-protheus-modern-devops/
 │   │   └── aporollback/    # Backups efêmeros para rollback imediato de contingência
 │   ├── patches/            # Fila local de deploys e staging area do GitOps (*.ptm)
 │   ├── system/             # Zips originais da System (Fiscal / Menus / Dicionários Ativos)
-│   └── systemload/         # Zips de carga e diretório exclusivo de processamento do UPDDISTR
+│   ├── systemload/         # Zips de carga e diretório exclusivo de processamento do UPDDISTR
+│   └── includes/
+│       ├── advpl/
+│       │   └── includes.zip
+│       ├── tlpp/
+│       │   └── includes.zip
+│       └── custom/
+│           └── includes.zip (opcional)
 │
 ├── .env                    # Variáveis de ambiente locais ativas (Globais e chaves de banco)
 ├── .env.postgres           # Configurações especialistas PostgreSQL
