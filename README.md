@@ -183,7 +183,7 @@ Coloque os arquivos compactados originais baixados do portal da TOTVS nas suas r
 
 * O pacote do instalador do `License Server` renomeado para `license.tar.gz` dentro de `./license_server/.`
 
-* O pacote do `dbAccess` renomeado para `dbaccess_linux_x64.tar.gz` dentro de `./dbaccess/.`
+* O pacote do `dbAccess` renomeado para `dbaccess.tar.gz` dentro de `./dbaccess/.`
 
 * O pacote do `AppServer` renomeado para `appserver.tar.gz` em `./protheus/bin/appserver/` e do `SmartClient WebApp` renomeado para `webapp.tar.gz` em `./protheus/bin/smartclient/`.
 

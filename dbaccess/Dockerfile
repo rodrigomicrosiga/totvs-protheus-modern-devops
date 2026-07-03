@@ -18,9 +18,9 @@ WORKDIR /tmp/build
 RUN wget https://download.oracle.com/otn_software/linux/instantclient/213000/instantclient-basiclite-linux.x64-21.3.0.0.0.zip && \
     unzip instantclient-basiclite-linux.x64-21.3.0.0.0.zip
 
-COPY ./dbaccess_linux_x64.tar.gz .
+COPY ./dbaccess.tar.gz .
 RUN mkdir -p dbaccess_extracao /tmp/out_dbaccess && \
-    tar -xzf dbaccess_linux_x64.tar.gz -C dbaccess_extracao/ && \
+    tar -xzf dbaccess.tar.gz -C dbaccess_extracao/ && \
     (cp -R dbaccess_extracao/*/* /tmp/out_dbaccess/ 2>/dev/null || cp -R dbaccess_extracao/* /tmp/out_dbaccess/)
 
 # ==============================================================================
